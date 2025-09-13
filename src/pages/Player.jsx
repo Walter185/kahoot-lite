@@ -6,12 +6,12 @@ import {
 } from 'firebase/firestore'
 import QuestionCard from '../components/QuestionCard'
 
-function useQuery(){
+function useQuery() {
   const { search } = useLocation()
   return useMemo(() => new URLSearchParams(search), [search])
 }
 
-export default function Player(){
+export default function Player() {
   const { roomId } = useParams()
   const qparams = useQuery()
   const [room, setRoom] = useState(null)
@@ -26,27 +26,27 @@ export default function Player(){
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
-  async function initPlayer(u){
+  async function initPlayer(u) {
     const name = qparams.get('name') || 'Jugador'
-    const meRef = doc(db,'rooms',roomId,'players', u.uid)
+    const meRef = doc(db, 'rooms', roomId, 'players', u.uid)
 
     const exists = await getDoc(meRef)
-    if(!exists.exists()){
-      await setDoc(meRef, { name, score:0, joinedAt: serverTimestamp(), answers: {} })
+    if (!exists.exists()) {
+      await setDoc(meRef, { name, score: 0, joinedAt: serverTimestamp(), answers: {} })
     }
 
-    const roomRef = doc(db,'rooms',roomId)
+    const roomRef = doc(db, 'rooms', roomId)
     const unsubRoom = onSnapshot(roomRef, s => {
-      const r = { id:s.id, ...s.data() }
+      const r = { id: s.id, ...s.data() }
       setRoom(r)
 
-      if(r.state === 'question' && r.questionStart?.toMillis){
+      if (r.state === 'question' && r.questionStart?.toMillis) {
         questionStartMs.current = r.questionStart.toMillis()
         setSelected(null)
         setLock(false)
       }
 
-      if(r.state === 'ended'){
+      if (r.state === 'ended') {
         alert('¡Partida terminada!')
         nav('/')
       }
@@ -54,23 +54,22 @@ export default function Player(){
     return () => unsubRoom()
   }
 
-  async function sendAnswer(index){
-    if(lock || !room || room.state !== 'question' || room.paused) return
+  async function sendAnswer(index) {
+    if (lock || !room || room.state !== 'question' || room.paused) return
     const qIdx = room.currentQuestionIndex
-    if(qIdx == null || qIdx < 0) return
+    if (qIdx == null || qIdx < 0) return
     const nowMs = Date.now()
     const start = questionStartMs.current || nowMs
 
     // Descontar pausas del tiempo tomado
     const pausedSoFar = (room.pausedAccumMs || 0) +
       (room.paused && room.pauseStart?.toMillis ? (Date.now() - room.pauseStart.toMillis()) : 0)
-    const effectiveNow = nowMs + pausedSoFar
-    const timeTakenMs = Math.max(0, effectiveNow - start)
+    const timeTakenMs = Math.max(0, (nowMs - start) - pausedSoFar)
 
     setSelected(index)
     setLock(true)
 
-    await updateDoc(doc(db,'rooms',roomId,'players', auth.currentUser.uid), {
+    await updateDoc(doc(db, 'rooms', roomId, 'players', auth.currentUser.uid), {
       [`answers.${qIdx}`]: { index, timeTakenMs, at: serverTimestamp() }
     })
   }
@@ -99,12 +98,12 @@ export default function Player(){
     return () => clearInterval(id)
   }, [room?.state, room?.questionStart?.seconds, room?.paused, room?.pauseStart?.seconds, room?.pausedAccumMs, q?.timeLimitSec])
 
-  if(!room) return <div className="card">Conectando...</div>
+  if (!room) return <div className="card">Conectando...</div>
 
   return (
     <div className="grid">
       <div className="card">
-        <div className="row" style={{justifyContent:'space-between'}}>
+        <div className="row" style={{ justifyContent: 'space-between' }}>
           <h1>Sala {room.id}</h1>
           <span className="badge">
             {room.state === 'question'
