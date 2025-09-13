@@ -5,19 +5,21 @@ import {
   doc, onSnapshot, setDoc, serverTimestamp, updateDoc, getDoc
 } from 'firebase/firestore'
 import QuestionCard from '../components/QuestionCard'
+import WinnerCelebration from '../components/WinnerCelebration'
 
-function useQuery() {
+function useQuery(){
   const { search } = useLocation()
   return useMemo(() => new URLSearchParams(search), [search])
 }
 
-export default function Player() {
+export default function Player(){
   const { roomId } = useParams()
   const qparams = useQuery()
   const [room, setRoom] = useState(null)
   const [selected, setSelected] = useState(null)
   const [lock, setLock] = useState(false)
   const [remaining, setRemaining] = useState(null)
+  const [showEndCelebration, setShowEndCelebration] = useState(false)
   const questionStartMs = useRef(null)
   const nav = useNavigate()
 
@@ -26,38 +28,43 @@ export default function Player() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
-  async function initPlayer(u) {
+  async function initPlayer(u){
     const name = qparams.get('name') || 'Jugador'
-    const meRef = doc(db, 'rooms', roomId, 'players', u.uid)
+    const meRef = doc(db,'rooms',roomId,'players', u.uid)
 
     const exists = await getDoc(meRef)
-    if (!exists.exists()) {
-      await setDoc(meRef, { name, score: 0, joinedAt: serverTimestamp(), answers: {} })
+    if(!exists.exists()){
+      await setDoc(meRef, { name, score:0, joinedAt: serverTimestamp(), answers: {} })
     }
 
-    const roomRef = doc(db, 'rooms', roomId)
+    const roomRef = doc(db,'rooms',roomId)
     const unsubRoom = onSnapshot(roomRef, s => {
-      const r = { id: s.id, ...s.data() }
+      const r = { id:s.id, ...s.data() }
       setRoom(r)
 
-      if (r.state === 'question' && r.questionStart?.toMillis) {
+      if(r.state === 'question' && r.questionStart?.toMillis){
         questionStartMs.current = r.questionStart.toMillis()
         setSelected(null)
         setLock(false)
       }
 
-      if (r.state === 'ended') {
-        alert('¡Partida terminada!')
-        nav('/')
+      // 🎉 mostrar celebración al finalizar
+      if(r.state === 'ended' && r.winner){
+        setShowEndCelebration(true)
+        // opcional: cerrar y volver al inicio luego de unos segundos
+        setTimeout(() => {
+          setShowEndCelebration(false)
+          // nav('/')   // si querés volver automáticamente
+        }, 4500)
       }
     })
     return () => unsubRoom()
   }
 
-  async function sendAnswer(index) {
-    if (lock || !room || room.state !== 'question' || room.paused) return
+  async function sendAnswer(index){
+    if(lock || !room || room.state !== 'question' || room.paused) return
     const qIdx = room.currentQuestionIndex
-    if (qIdx == null || qIdx < 0) return
+    if(qIdx == null || qIdx < 0) return
     const nowMs = Date.now()
     const start = questionStartMs.current || nowMs
 
@@ -69,7 +76,7 @@ export default function Player() {
     setSelected(index)
     setLock(true)
 
-    await updateDoc(doc(db, 'rooms', roomId, 'players', auth.currentUser.uid), {
+    await updateDoc(doc(db,'rooms',roomId,'players', auth.currentUser.uid), {
       [`answers.${qIdx}`]: { index, timeTakenMs, at: serverTimestamp() }
     })
   }
@@ -98,13 +105,18 @@ export default function Player() {
     return () => clearInterval(id)
   }, [room?.state, room?.questionStart?.seconds, room?.paused, room?.pauseStart?.seconds, room?.pausedAccumMs, q?.timeLimitSec])
 
-  if (!room) return <div className="card">Conectando...</div>
+  if(!room) return <div className="card">Conectando...</div>
 
   return (
     <div className="grid">
+      {/* 🎉 Celebración de fin para todos los jugadores */}
+      {showEndCelebration && room.winner && (
+        <WinnerCelebration name={room.winner.name} subtitle="¡Ganó la partida!" />
+      )}
+
       <div className="card">
-        <div className="row" style={{ justifyContent: 'space-between' }}>
-          <h1>Sala {room.id}</h1>
+        <div className="row" style={{justifyContent:'space-between'}}>
+          <h1>Sala {room.code || room.id}</h1>
           <span className="badge">
             {room.state === 'question'
               ? (room.paused ? 'Pausado' : `${remaining ?? q?.timeLimitSec ?? 0}s`)
@@ -113,6 +125,11 @@ export default function Player() {
         </div>
         {room.state === 'lobby' && <p className="small">Esperando a que el anfitrión inicie…</p>}
         {room.state === 'question' && room.paused && <p className="small">El juego está pausado.</p>}
+        {room.state === 'ended' && room.winner && (
+          <p className="small" style={{marginTop:8}}>
+            Ganador: <strong>{room.winner.name}</strong> ({room.winner.score || 0} pts)
+          </p>
+        )}
       </div>
 
       {(room.state === 'question' || room.state === 'reveal') && q && (

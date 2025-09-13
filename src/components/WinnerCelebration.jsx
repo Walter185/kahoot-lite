@@ -1,6 +1,6 @@
 import { useEffect } from 'react'
 
-export default function WinnerCelebration({ name, subtitle = '¡Ganador/a!', durationMs = 3500, onClose }) {
+export default function WinnerCelebration({ name, subtitle = '¡Ganador/a!', durationMs = 4000, onClose }) {
   useEffect(() => {
     let stop = () => {}
     ;(async () => {
@@ -18,11 +18,9 @@ export default function WinnerCelebration({ name, subtitle = '¡Ganador/a!', dur
           if (Date.now() > end) clearInterval(id)
         }, 250)
         stop = () => clearInterval(id)
-      } catch {
-        // sin dependencia: se verá el fallback CSS (serpentinas) que definimos en styles.css
-      }
+      } catch {}
     })()
-    const t = setTimeout(() => onClose && onClose(), durationMs + 500)
+    const t = setTimeout(() => onClose && onClose(), durationMs + 300)
     return () => { stop(); clearTimeout(t) }
   }, [durationMs, onClose])
 
@@ -33,7 +31,7 @@ export default function WinnerCelebration({ name, subtitle = '¡Ganador/a!', dur
         <div className="cele-name">{name}</div>
         <div className="cele-sub">{subtitle}</div>
       </div>
-      {/* fallback de serpentinas (CSS) */}
+      {/* Fallback serpentinas (CSS) */}
       <div className="serp s1" /><div className="serp s2" /><div className="serp s3" />
       <div className="serp s4" /><div className="serp s5" /><div className="serp s6" />
     </div>

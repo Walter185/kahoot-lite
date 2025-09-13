@@ -10,8 +10,8 @@ const sampleQuiz = {
   questions: [
     {
       text: '¿En qué período histórico se consolidó el modelo agroexportador?',
-      options: ['1810-1850','1870-1930','1940-1970','1820-1910'],
-      correctIndex: 1, timeLimitSec: 20
+      options: ['1870-1930','1810-1850','1940-1970','1820-1910'],
+      correctIndex: 0, timeLimitSec: 20
     },
     {
       text: '¿Qué producto se convirtió en el principal de exportación de Argentina?',
@@ -20,8 +20,8 @@ const sampleQuiz = {
     },
     {
       text: '¿Qué país fue el principal inversor extranjero en Argentina durante este modelo?',
-      options: ['Francia','Gran Bretaña','Estados Unidos','Alemania'],
-      correctIndex: 1, timeLimitSec: 20
+      options: ['Francia','Alemania','Estados Unidos','Gran Bretaña'],
+      correctIndex: 3, timeLimitSec: 20
     },
     {
       text: '¿Qué región argentina fue la más favorecida?',
@@ -35,8 +35,8 @@ const sampleQuiz = {
     },
     {
       text: '¿Qué grupo social concentraba la tierra y el poder político en Argentina?',
-      options: ['Clase obrera','Oligarquía terrateniente','Campesinos indígenas','Inmigrantes y trabajadores urbanos'],
-      correctIndex: 1, timeLimitSec: 20
+      options: ['Oligarquía terrateniente','Clase obrera','Campesinos indígenas','Inmigrantes y trabajadores urbanos'],
+      correctIndex: 0, timeLimitSec: 20
     },
     {
       text: '¿Cuál de las siguientes fue una consecuencia problemática del modelo agroexportador argentino entre 1870 y 1930?',
