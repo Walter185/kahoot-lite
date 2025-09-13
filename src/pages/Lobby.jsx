@@ -4,11 +4,55 @@ import { auth, db, ensureAnonAuth, now } from '../firebase'
 import { doc, setDoc, getDoc } from 'firebase/firestore'
 
 const sampleQuiz = {
-  title: 'Demo',
+  title: 'Modelo agroexportador (AR, 1870–1930)',
   questions: [
-    { text: '¿Capital de Uruguay?', options: ['Montevideo','Salto','Paysandú','Colonia'], correctIndex: 0, timeLimitSec: 20 },
-    { text: '2 + 2 =', options: ['3','4','22','5'], correctIndex: 1, timeLimitSec: 10 },
-    { text: '¿Color de la bandera de Argentina?', options: ['Rojo','Celeste y blanco','Verde','Negro'], correctIndex: 1, timeLimitSec: 15 },
+    {
+      text: '¿En qué período histórico se consolidó el modelo agroexportador?',
+      options: ['1810-1850','1870-1930','1940-1970','1820-1910'],
+      correctIndex: 1,
+      timeLimitSec: 20
+    },
+    {
+      text: '¿Qué producto se convirtió en el principal de exportación de Argentina?',
+      options: ['Oro','Carne y cereales','Vino','Azúcar'],
+      correctIndex: 1,
+      timeLimitSec: 20
+    },
+    {
+      text: '¿Qué país fue el principal inversor extranjero en Argentina durante este modelo?',
+      options: ['Francia','Gran Bretaña','Estados Unidos','Alemania'],
+      correctIndex: 1,
+      timeLimitSec: 20
+    },
+    {
+      text: '¿Qué región argentina fue la más favorecida?',
+      options: ['Noroeste','Noreste','Pampa Húmeda','La Patagonia'],
+      correctIndex: 2,
+      timeLimitSec: 15
+    },
+    {
+      text: '¿Qué acontecimiento internacional puso en crisis el modelo agroexportador?',
+      options: ['La Segunda Guerra Mundial','La crisis de 1930','La Primera Guerra Mundial','La Revolución Industrial'],
+      correctIndex: 1,
+      timeLimitSec: 20
+    },
+    {
+      text: '¿Qué grupo social concentraba la tierra y el poder político en Argentina?',
+      options: ['Clase obrera','Oligarquía terrateniente','Campesinos indígenas','Inmigrantes y trabajadores urbanos'],
+      correctIndex: 1,
+      timeLimitSec: 20
+    },
+    {
+      text: '¿Cuál de las siguientes fue una consecuencia problemática del modelo agroexportador argentino entre 1870 y 1930?',
+      options: [
+        'Aumento generalizado del acceso a la propiedad rural para inmigrantes',
+        'Igual distribución de la riqueza y del poder político',
+        'Diversificación industrial en todo el país',
+        'Concentración de la tierra y desplazamiento de pequeños productores'
+      ],
+      correctIndex: 3,
+      timeLimitSec: 25
+    }
   ]
 }
 
@@ -22,26 +66,28 @@ export default function Lobby(){
 
   useEffect(() => { ensureAnonAuth() }, [])
 
-  // src/pages/Lobby.js (o .jsx / .tsx)
-async function createRoom(){
-  setCreating(true)
-  // 🔐 Asegura que haya usuario anónimo antes de escribir
-  const u = await ensureAnonAuth()
+  // src/pages/Lobby.js
+  async function createRoom(){
+    setCreating(true)
+    try{
+      // 🔐 Asegura usuario anónimo antes de escribir
+      const u = await ensureAnonAuth()
 
-  const id = code6()
-  const ref = doc(db, 'rooms', id)
-  await setDoc(ref, {
-    hostId: u.uid,            // ← ahora las reglas lo permiten
-    createdAt: now(),
-    state: 'lobby',
-    currentQuestionIndex: -1,
-    questionStart: null,
-    quiz: sampleQuiz
-  })
-  setCreating(false)
-  nav(`/host/${id}`)
-}
-
+      const id = code6()
+      const ref = doc(db, 'rooms', id)
+      await setDoc(ref, {
+        hostId: u.uid,
+        createdAt: now(),
+        state: 'lobby',
+        currentQuestionIndex: -1,
+        questionStart: null,
+        quiz: sampleQuiz
+      })
+      nav(`/host/${id}`)
+    } finally {
+      setCreating(false)
+    }
+  }
 
   async function joinRoom(){
     if(!roomCode) return
@@ -60,7 +106,7 @@ async function createRoom(){
     <div className="grid">
       <div className="card">
         <h1>Crear sala</h1>
-        <p className="small">Se genera una sala con un quiz de ejemplo. Luego podés avanzar pregunta por pregunta.</p>
+        <p className="small">Se genera una sala con el cuestionario “{sampleQuiz.title}”.</p>
         <button className="btn" onClick={createRoom} disabled={creating}>
           {creating ? 'Creando...' : 'Crear y ser anfitrión'}
         </button>

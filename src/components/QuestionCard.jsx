@@ -1,10 +1,10 @@
-export default function QuestionCard({ q, selected, onSelect, disabled=false, reveal=false }){
+export default function QuestionCard({ q, selected, onSelect, disabled=false, reveal=false, countdownSec }){
   if(!q) return null
   return (
     <div className="card">
       <div className="row" style={{justifyContent:'space-between'}}>
         <h2 style={{maxWidth:'80%'}}>{q.text}</h2>
-        <div className="badge">{q.timeLimitSec}s</div>
+        <div className="badge">{typeof countdownSec === 'number' ? countdownSec : q.timeLimitSec}s</div>
       </div>
 
       <div className="grid two">

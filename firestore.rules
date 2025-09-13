@@ -1,0 +1,35 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function isSignedIn() { return request.auth != null; }
+
+    match /rooms/{roomId} {
+      allow read: if true;
+
+      // Crear sala: host autenticado y que el hostId sea el autor
+      allow create: if isSignedIn()
+        && request.resource.data.hostId == request.auth.uid;
+
+      // Actualizar flujo (solo host) → estado/índice/tiempo
+      allow update: if isSignedIn()
+        && resource.data.hostId == request.auth.uid;
+
+      // (Opcional) borrar sala: solo host
+      allow delete: if isSignedIn() && resource.data.hostId == request.auth.uid;
+
+      match /players/{playerId} {
+        allow read: if true;
+
+        // Crear jugador: solo su propio doc
+        allow create: if isSignedIn()
+          && request.auth.uid == playerId;
+
+        // Update: jugador solo sus respuestas; host puede puntuar/corregir
+        allow update: if isSignedIn() && (
+          request.auth.uid == playerId ||
+          get(/databases/$(database)/documents/rooms/$(roomId)).data.hostId == request.auth.uid
+        );
+      }
+    }
+  }
+}
