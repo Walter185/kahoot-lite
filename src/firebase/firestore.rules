@@ -1,0 +1,19 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function isSignedIn(){ return request.auth != null }
+    function room(roomId){ return get(/databases/$(database)/documents/rooms/$(roomId)).data }
+    match /rooms/{roomId} {
+      allow read: if true;
+      allow write: if isSignedIn() && request.resource.data.keys().hasOnly(['state','currentQuestionIndex','questionStart']) && request.auth.uid == room(roomId).hostId;
+      match /players/{playerId} {
+        allow read: if true;
+        allow create: if isSignedIn() && request.auth.uid == playerId;
+        allow update: if isSignedIn() && (
+          (request.auth.uid == playerId && request.resource.data.diff(resource.data).changedKeys().hasOnly(['answers'])) ||
+          (request.auth.uid == room(roomId).hostId)
+        );
+      }
+    }
+  }
+}

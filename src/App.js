@@ -1,25 +1,20 @@
-import logo from './logo.svg';
-import './App.css';
+import { Routes, Route, Link } from 'react-router-dom'
+import Lobby from './pages/Lobby'
+import Host from './pages/Host'
+import Player from './pages/Player'
 
-function App() {
+export default function App(){
   return (
-    <div className="App">
-      <header className="App-header">
-        <img src={logo} className="App-logo" alt="logo" />
-        <p>
-          Edit <code>src/App.js</code> and save to reload.
-        </p>
-        <a
-          className="App-link"
-          href="https://reactjs.org"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          Learn React
-        </a>
+    <div className="container">
+      <header className="row" style={{justifyContent:'space-between', marginBottom:18}}>
+        <Link to="/" style={{fontWeight:800, letterSpacing:.5}}>Kahoot Lite</Link>
+        <div className="small">React (CRA) + Firebase</div>
       </header>
+      <Routes>
+        <Route path="/" element={<Lobby/>} />
+        <Route path="/host/:roomId" element={<Host/>} />
+        <Route path="/play/:roomId" element={<Player/>} />
+      </Routes>
     </div>
-  );
+  )
 }
-
-export default App;
