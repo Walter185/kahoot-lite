@@ -36,7 +36,8 @@ export default function Host(){
   async function startGame(){
     if(!meIsHost) return
     await updateDoc(doc(db,'rooms',roomId), {
-      state:'question', currentQuestionIndex:0, questionStart: now()
+      state:'question', currentQuestionIndex:0, questionStart: now(),
+      paused:false, pauseStart:null, pausedAccumMs: 0
     })
     setAutoRevealedAtIndex(-1)
   }
@@ -51,9 +52,10 @@ export default function Host(){
       const p = docSnap.data()
       const ans = p.answers?.[qIdx]
       if(ans && !ans.scored){
+        const limitMs = qData.timeLimitSec * 1000
+        const timeMs = Math.max(0, Math.min(limitMs, ans.timeTakenMs || limitMs))
         const correct = ans.index === qData.correctIndex
-        const timeMs = Math.max(0, Math.min(qData.timeLimitSec*1000, ans.timeTakenMs || qData.timeLimitSec*1000))
-        const base = correct ? Math.round(1000 * (1 - (timeMs/(qData.timeLimitSec*1000)))) : 0
+        const base = correct ? Math.round(1000 * (1 - (timeMs/limitMs))) : 0
         const gained = Math.max(0, base)
         const newScore = (p.score || 0) + gained
         batch.update(docSnap.ref, {
@@ -74,22 +76,42 @@ export default function Host(){
       await updateDoc(doc(db,'rooms',roomId), { state:'ended' })
     } else {
       await updateDoc(doc(db,'rooms',roomId), {
-        state:'question', currentQuestionIndex: next, questionStart: now()
+        state:'question', currentQuestionIndex: next, questionStart: now(),
+        paused:false, pauseStart:null, pausedAccumMs: 0
       })
       setAutoRevealedAtIndex(-1)
     }
   }
 
-  // ⏱️ Cuenta regresiva y auto-reveal al vencer
+  // Pausar / Reanudar
+  async function togglePause(){
+    if(!meIsHost || !room || room.state !== 'question') return
+    if(!room.paused){
+      // Entrar en pausa
+      await updateDoc(doc(db,'rooms',roomId), { paused:true, pauseStart: now() })
+    } else {
+      // Salir de pausa: sumamos al acumulado la diferencia (cliente)
+      const pauseStartMs = room.pauseStart?.toMillis ? room.pauseStart.toMillis() : Date.now()
+      const delta = Math.max(0, Date.now() - pauseStartMs)
+      await updateDoc(doc(db,'rooms',roomId), {
+        paused:false, pauseStart:null, pausedAccumMs: (room.pausedAccumMs || 0) + delta
+      })
+    }
+  }
+
+  // ⏱️ Cuenta regresiva con soporte de pausa
   useEffect(() => {
     if(!meIsHost || !room || room.state !== 'question' || !q || !room.questionStart?.toMillis) {
       setRemaining(null)
       return
     }
     const start = room.questionStart.toMillis()
-    const deadline = start + q.timeLimitSec * 1000
+    const baseDeadline = start + q.timeLimitSec * 1000
 
     const tick = () => {
+      const pausedSoFar = (room.pausedAccumMs || 0) +
+        (room.paused && room.pauseStart?.toMillis ? (Date.now() - room.pauseStart.toMillis()) : 0)
+      const deadline = baseDeadline + pausedSoFar
       const secs = Math.max(0, Math.ceil((deadline - Date.now()) / 1000))
       setRemaining(secs)
       if (secs === 0 && autoRevealedAtIndex !== room.currentQuestionIndex) {
@@ -101,7 +123,7 @@ export default function Host(){
     const id = setInterval(tick, 250)
     return () => clearInterval(id)
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [meIsHost, room?.state, room?.currentQuestionIndex, room?.questionStart?.seconds, q?.timeLimitSec])
+  }, [meIsHost, room?.state, room?.currentQuestionIndex, room?.questionStart?.seconds, room?.paused, room?.pauseStart?.seconds, room?.pausedAccumMs, q?.timeLimitSec])
 
   // Auto-next 3.5s después del reveal
   useEffect(() => {
@@ -124,12 +146,24 @@ export default function Host(){
         <div className="row" style={{justifyContent:'space-between'}}>
           <h1>Sala {room.id}</h1>
           <span className="badge">
-            {room.state === 'question' && typeof remaining === 'number' ? `${remaining}s` : room.state}
+            {room.state === 'question' && typeof remaining === 'number'
+              ? (room.paused ? `Pausado` : `${remaining}s`)
+              : room.state}
           </span>
         </div>
         <p className="small">Jugadores conectados: {players.length}</p>
+
         {room.state === 'lobby'    && <button className="btn" onClick={startGame}>Iniciar</button>}
-        {room.state === 'question' && <button className="btn" onClick={reveal}>Revelar ahora</button>}
+
+        {room.state === 'question' && (
+          <div className="row" style={{gap:8}}>
+            <button className="btn" onClick={reveal}>Revelar ahora</button>
+            <button className="btn secondary" onClick={togglePause}>
+              {room.paused ? 'REANUDAR' : 'PARAR JUEGO'}
+            </button>
+          </div>
+        )}
+
         {room.state === 'reveal'   && <button className="btn" onClick={nextQuestion}>Siguiente</button>}
         {room.state === 'ended'    && <button className="btn secondary" onClick={() => nav('/')}>Volver al inicio</button>}
       </div>

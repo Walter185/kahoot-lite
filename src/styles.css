@@ -5,6 +5,34 @@ html,body,#root{ height:100%; }
 body{ margin:0; background:linear-gradient(180deg,#0b1220,#0f172a); color:#e5e7eb; font-family:system-ui,-apple-system,Segoe UI,Roboto,Inter,Ubuntu,'Open Sans','Helvetica Neue',sans-serif;}
 a{ color:#93c5fd; text-decoration:none;}
 .container{ max-width:980px; margin:0 auto; padding:16px; }
+
+/* Safe areas en iPhone con notch */
+body { padding-top: env(safe-area-inset-top); padding-bottom: env(safe-area-inset-bottom); }
+
+/* Evita el subrayado azul al tocar y selecciones accidentales */
+* { -webkit-tap-highlight-color: transparent; }
+.card, .option, .btn { user-select: none; }
+
+/* Mobile-first: botones y opciones cómodas para el dedo */
+.btn { width: 100%; min-height: 48px; font-weight: 700; }
+.option { min-height: 60px; font-size: 1rem; display:flex; align-items:center; }
+
+/* En pantallas muy chicas, 1 columna sí o sí */
+@media (max-width: 480px){
+  .grid.two { grid-template-columns: 1fr !important; }
+  h1{ font-size: 1.25rem; } h2{ font-size: 1.05rem; }
+}
+
+/* En dispositivos de puntero “grueso” (celus/tablets), más grande aún */
+@media (pointer: coarse){
+  .option { min-height: 64px; font-size: 1.05rem; }
+  .badge { padding: 8px 12px; }
+}
+
+
+
+
+
 @media (max-width: 768px){
   .container{ max-width:100%; padding:12px; }
 }

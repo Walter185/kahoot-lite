@@ -35,13 +35,11 @@ export default function Player(){
       await setDoc(meRef, { name, score:0, joinedAt: serverTimestamp(), answers: {} })
     }
 
-    // Sub a la sala
     const roomRef = doc(db,'rooms',roomId)
     const unsubRoom = onSnapshot(roomRef, s => {
       const r = { id:s.id, ...s.data() }
       setRoom(r)
 
-      // Reset al iniciar una pregunta
       if(r.state === 'question' && r.questionStart?.toMillis){
         questionStartMs.current = r.questionStart.toMillis()
         setSelected(null)
@@ -57,12 +55,17 @@ export default function Player(){
   }
 
   async function sendAnswer(index){
-    if(lock || !room) return
+    if(lock || !room || room.state !== 'question' || room.paused) return
     const qIdx = room.currentQuestionIndex
     if(qIdx == null || qIdx < 0) return
     const nowMs = Date.now()
     const start = questionStartMs.current || nowMs
-    const timeTakenMs = Math.max(0, nowMs - start)
+
+    // Descontar pausas del tiempo tomado
+    const pausedSoFar = (room.pausedAccumMs || 0) +
+      (room.paused && room.pauseStart?.toMillis ? (Date.now() - room.pauseStart.toMillis()) : 0)
+    const effectiveNow = nowMs + pausedSoFar
+    const timeTakenMs = Math.max(0, effectiveNow - start)
 
     setSelected(index)
     setLock(true)
@@ -75,22 +78,26 @@ export default function Player(){
   const q = room?.quiz?.questions?.[room?.currentQuestionIndex ?? -1]
   const reveal = room?.state === 'reveal'
 
-  // ⏱️ Cuenta regresiva local
+  // ⏱️ Cuenta regresiva con soporte de pausa
   useEffect(() => {
     if (!room || room.state !== 'question' || !q || !room.questionStart?.toMillis) {
       setRemaining(null)
       return
     }
     const start = room.questionStart.toMillis()
-    const deadline = start + q.timeLimitSec * 1000
+    const baseDeadline = start + q.timeLimitSec * 1000
+
     const tick = () => {
+      const pausedSoFar = (room.pausedAccumMs || 0) +
+        (room.paused && room.pauseStart?.toMillis ? (Date.now() - room.pauseStart.toMillis()) : 0)
+      const deadline = baseDeadline + pausedSoFar
       const secs = Math.max(0, Math.ceil((deadline - Date.now()) / 1000))
       setRemaining(secs)
     }
     tick()
     const id = setInterval(tick, 250)
     return () => clearInterval(id)
-  }, [room?.state, room?.questionStart?.seconds, q?.timeLimitSec])
+  }, [room?.state, room?.questionStart?.seconds, room?.paused, room?.pauseStart?.seconds, room?.pausedAccumMs, q?.timeLimitSec])
 
   if(!room) return <div className="card">Conectando...</div>
 
@@ -100,10 +107,13 @@ export default function Player(){
         <div className="row" style={{justifyContent:'space-between'}}>
           <h1>Sala {room.id}</h1>
           <span className="badge">
-            {room.state === 'question' && typeof remaining === 'number' ? `${remaining}s` : room.state}
+            {room.state === 'question'
+              ? (room.paused ? 'Pausado' : `${remaining ?? q?.timeLimitSec ?? 0}s`)
+              : room.state}
           </span>
         </div>
         {room.state === 'lobby' && <p className="small">Esperando a que el anfitrión inicie…</p>}
+        {room.state === 'question' && room.paused && <p className="small">El juego está pausado.</p>}
       </div>
 
       {(room.state === 'question' || room.state === 'reveal') && q && (
@@ -111,7 +121,7 @@ export default function Player(){
           q={q}
           selected={selected}
           onSelect={sendAnswer}
-          disabled={lock || reveal}
+          disabled={lock || reveal || room.paused}
           reveal={reveal}
           countdownSec={remaining}
         />
