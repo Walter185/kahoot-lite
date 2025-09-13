@@ -11,7 +11,7 @@ service firebase.storage {
 
     // Todo lo demás, bloqueado
     match /{allPaths=**} {
-      allow read, write: if false;
+      allow read, write: if true;
     }
   }
 }

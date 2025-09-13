@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { useLocation, useNavigate, useParams } from 'react-router-dom'
 import { auth, db, ensureAnonAuth } from '../firebase'
 import {
-  doc, onSnapshot, setDoc, serverTimestamp, updateDoc, getDoc
+  doc, onSnapshot, setDoc, serverTimestamp, updateDoc, getDoc, collection
 } from 'firebase/firestore'
 import QuestionCard from '../components/QuestionCard'
 import WinnerCelebration from '../components/WinnerCelebration'
@@ -20,25 +20,31 @@ export default function Player(){
   const [lock, setLock] = useState(false)
   const [remaining, setRemaining] = useState(null)
   const [showEndCelebration, setShowEndCelebration] = useState(false)
+  const [showPauseCelebration, setShowPauseCelebration] = useState(false)
+  const [playerCount, setPlayerCount] = useState(0) // 👈 inscritos
   const questionStartMs = useRef(null)
   const nav = useNavigate()
 
+  // 1) Asegurar auth anónimo y crear (si no existe) mi doc de jugador
   useEffect(() => {
-    ensureAnonAuth().then(initPlayer).catch(console.error)
+    (async () => {
+      try{
+        const u = await ensureAnonAuth()
+        const name = qparams.get('name') || 'Jugador'
+        const meRef = doc(db,'rooms',roomId,'players', u.uid)
+        const exists = await getDoc(meRef)
+        if(!exists.exists()){
+          await setDoc(meRef, { name, score:0, joinedAt: serverTimestamp(), answers: {} })
+        }
+      } catch(err){ console.error(err) }
+    })()
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [])
+  }, [roomId])
 
-  async function initPlayer(u){
-    const name = qparams.get('name') || 'Jugador'
-    const meRef = doc(db,'rooms',roomId,'players', u.uid)
-
-    const exists = await getDoc(meRef)
-    if(!exists.exists()){
-      await setDoc(meRef, { name, score:0, joinedAt: serverTimestamp(), answers: {} })
-    }
-
+  // 2) Suscripción al documento de la sala
+  useEffect(() => {
     const roomRef = doc(db,'rooms',roomId)
-    const unsubRoom = onSnapshot(roomRef, s => {
+    const unsub = onSnapshot(roomRef, s => {
       const r = { id:s.id, ...s.data() }
       setRoom(r)
 
@@ -48,18 +54,31 @@ export default function Player(){
         setLock(false)
       }
 
-      // 🎉 mostrar celebración al finalizar
+      // 🎉 mostrar celebración al finalizar (para todos)
       if(r.state === 'ended' && r.winner){
         setShowEndCelebration(true)
-        // opcional: cerrar y volver al inicio luego de unos segundos
-        setTimeout(() => {
-          setShowEndCelebration(false)
-          // nav('/')   // si querés volver automáticamente
-        }, 4500)
+        const t = setTimeout(() => setShowEndCelebration(false), 4500)
+        return () => clearTimeout(t)
       }
     })
-    return () => unsubRoom()
-  }
+    return () => unsub()
+  }, [roomId])
+
+  // 3) Suscripción al conteo de jugadores (inscritos)
+  useEffect(() => {
+    const playersRef = collection(db,'rooms',roomId,'players')
+    const unsub = onSnapshot(playersRef, snap => setPlayerCount(snap.size))
+    return () => unsub()
+  }, [roomId])
+
+  // 4) Celebración de "Líder momentáneo" cuando el host pausa
+  useEffect(() => {
+    if (room?.state === 'question' && room?.paused && room?.leader) {
+      setShowPauseCelebration(true)
+      const t = setTimeout(() => setShowPauseCelebration(false), 1800)
+      return () => clearTimeout(t)
+    }
+  }, [room?.paused, room?.leader?.id, room?.state])
 
   async function sendAnswer(index){
     if(lock || !room || room.state !== 'question' || room.paused) return
@@ -114,6 +133,11 @@ export default function Player(){
         <WinnerCelebration name={room.winner.name} subtitle="¡Ganó la partida!" />
       )}
 
+      {/* 🎊 Lider momentáneo cuando el host pausa */}
+      {showPauseCelebration && room?.leader && (
+        <WinnerCelebration name={room.leader.name} subtitle="Líder momentáneo" durationMs={1600} />
+      )}
+
       <div className="card">
         <div className="row" style={{justifyContent:'space-between'}}>
           <h1>Sala {room.code || room.id}</h1>
@@ -123,8 +147,18 @@ export default function Player(){
               : room.state}
           </span>
         </div>
-        {room.state === 'lobby' && <p className="small">Esperando a que el anfitrión inicie…</p>}
-        {room.state === 'question' && room.paused && <p className="small">El juego está pausado.</p>}
+
+        {room.state === 'lobby' && (
+          <>
+            <p className="small">Esperando a que el anfitrión inicie…</p>
+            <p className="small">Inscritos: <strong>{playerCount}</strong></p>
+          </>
+        )}
+
+        {room.state === 'question' && room.paused && (
+          <p className="small">El juego está pausado.</p>
+        )}
+
         {room.state === 'ended' && room.winner && (
           <p className="small" style={{marginTop:8}}>
             Ganador: <strong>{room.winner.name}</strong> ({room.winner.score || 0} pts)
