@@ -157,7 +157,7 @@ export default function Host() {
       })()}
       <div className="card">
         <div className="row" style={{ justifyContent: 'space-between' }}>
-          <h1>Sala {room.id}</h1>
+        <h1>Sala {room.code || room.id}</h1>
           <span className="badge">
             {room.state === 'question' && typeof remaining === 'number'
               ? (room.paused ? `Pausado` : `${remaining}s`)

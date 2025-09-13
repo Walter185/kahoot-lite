@@ -1,7 +1,9 @@
 import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { auth, db, ensureAnonAuth, now } from '../firebase'
-import { doc, setDoc, getDoc } from 'firebase/firestore'
+import { db, ensureAnonAuth, now } from '../firebase'
+import {
+  doc, setDoc, getDoc, runTransaction, collection
+} from 'firebase/firestore'
 
 const sampleQuiz = {
   title: 'Modelo agroexportador (AR, 1870–1930)',
@@ -9,38 +11,32 @@ const sampleQuiz = {
     {
       text: '¿En qué período histórico se consolidó el modelo agroexportador?',
       options: ['1810-1850','1870-1930','1940-1970','1820-1910'],
-      correctIndex: 1,
-      timeLimitSec: 20
+      correctIndex: 1, timeLimitSec: 20
     },
     {
       text: '¿Qué producto se convirtió en el principal de exportación de Argentina?',
       options: ['Oro','Carne y cereales','Vino','Azúcar'],
-      correctIndex: 1,
-      timeLimitSec: 20
+      correctIndex: 1, timeLimitSec: 20
     },
     {
       text: '¿Qué país fue el principal inversor extranjero en Argentina durante este modelo?',
       options: ['Francia','Gran Bretaña','Estados Unidos','Alemania'],
-      correctIndex: 1,
-      timeLimitSec: 20
+      correctIndex: 1, timeLimitSec: 20
     },
     {
       text: '¿Qué región argentina fue la más favorecida?',
       options: ['Noroeste','Noreste','Pampa Húmeda','La Patagonia'],
-      correctIndex: 2,
-      timeLimitSec: 15
+      correctIndex: 2, timeLimitSec: 15
     },
     {
       text: '¿Qué acontecimiento internacional puso en crisis el modelo agroexportador?',
       options: ['La Segunda Guerra Mundial','La crisis de 1930','La Primera Guerra Mundial','La Revolución Industrial'],
-      correctIndex: 1,
-      timeLimitSec: 20
+      correctIndex: 1, timeLimitSec: 20
     },
     {
       text: '¿Qué grupo social concentraba la tierra y el poder político en Argentina?',
       options: ['Clase obrera','Oligarquía terrateniente','Campesinos indígenas','Inmigrantes y trabajadores urbanos'],
-      correctIndex: 1,
-      timeLimitSec: 20
+      correctIndex: 1, timeLimitSec: 20
     },
     {
       text: '¿Cuál de las siguientes fue una consecuencia problemática del modelo agroexportador argentino entre 1870 y 1930?',
@@ -50,13 +46,13 @@ const sampleQuiz = {
         'Diversificación industrial en todo el país',
         'Concentración de la tierra y desplazamiento de pequeños productores'
       ],
-      correctIndex: 3,
-      timeLimitSec: 25
+      correctIndex: 3, timeLimitSec: 25
     }
   ]
 }
 
-function code6(){ return Math.random().toString().slice(2,8) }
+// Código de 6 dígitos numérico
+function code6(){ return Math.floor(100000 + Math.random()*900000).toString() }
 
 export default function Lobby(){
   const [roomCode, setRoomCode] = useState('')
@@ -66,38 +62,85 @@ export default function Lobby(){
 
   useEffect(() => { ensureAnonAuth() }, [])
 
-  // src/pages/Lobby.js
+  // Crear sala con transacción: reserva code -> roomId y crea room
   async function createRoom(){
     setCreating(true)
     try{
-      // 🔐 Asegura usuario anónimo antes de escribir
       const u = await ensureAnonAuth()
 
-      const id = code6()
-      const ref = doc(db, 'rooms', id)
-      await setDoc(ref, {
-        hostId: u.uid,
-        createdAt: now(),
-        state: 'lobby',
-        currentQuestionIndex: -1,
-        questionStart: null,
-        quiz: sampleQuiz
+      // Transacción: intenta hasta lograr un code libre
+      const { roomId, code } = await runTransaction(db, async (tx) => {
+        // genera code y chequea alias
+        let codeTry = code6()
+        let aliasRef = doc(db, 'roomCodes', codeTry)
+        let aliasSnap = await tx.get(aliasRef)
+        let tries = 0
+        while (aliasSnap.exists()) {
+          if (++tries > 8) throw new Error('room_code_exhausted')
+          codeTry = code6()
+          aliasRef = doc(db, 'roomCodes', codeTry)
+          aliasSnap = await tx.get(aliasRef)
+        }
+
+        // crea room con ID auto
+        const roomRef = doc(collection(db, 'rooms'))
+        const roomIdAuto = roomRef.id
+
+        tx.set(roomRef, {
+          hostId: u.uid,
+          createdAt: now(),
+          state: 'lobby',
+          currentQuestionIndex: -1,
+          questionStart: null,
+          paused: false,
+          pauseStart: null,
+          pausedAccumMs: 0,
+          code: codeTry,       // ← guardamos el code dentro de la sala
+          quiz: sampleQuiz
+        })
+
+        // reserva alias (no se puede sobrescribir por reglas)
+        tx.set(aliasRef, {
+          roomId: roomIdAuto,
+          hostId: u.uid,
+          createdAt: now(),
+          active: true
+        })
+
+        return { roomId: roomIdAuto, code: codeTry }
       })
-      nav(`/host/${id}`)
+
+      // Navegamos por roomId (la ruta es /host/:roomId)
+      nav(`/host/${roomId}`)
+    } catch (e) {
+      console.error(e)
+      const msg = e.message === 'room_code_exhausted'
+        ? 'No pudimos generar un código único. Probá otra vez.'
+        : (e.code || e.message)
+      alert(`No se pudo crear la sala: ${msg}`)
     } finally {
       setCreating(false)
     }
   }
 
+  // Unirse: resuelve code → roomId y navega al player por roomId
   async function joinRoom(){
     if(!roomCode) return
-    const ref = doc(db, 'rooms', roomCode)
-    const snap = await getDoc(ref)
-    if(!snap.exists()){
-      alert('Sala no encontrada')
+    const aliasRef = doc(db, 'roomCodes', roomCode)
+    const aliasSnap = await getDoc(aliasRef)
+    if(!aliasSnap.exists()){
+      alert('Código inválido o sala inexistente.')
       return
     }
-    nav(`/play/${roomCode}?name=${encodeURIComponent(name || 'Jugador')}`)
+    const { roomId } = aliasSnap.data()
+    // (Opcional: comprobá que la sala exista)
+    const roomRef = doc(db, 'rooms', roomId)
+    const roomSnap = await getDoc(roomRef)
+    if(!roomSnap.exists()){
+      alert('La sala ya no está disponible.')
+      return
+    }
+    nav(`/play/${roomId}?name=${encodeURIComponent(name || 'Jugador')}`)
   }
 
   const shareUrl = roomCode ? `${window.location.origin}/play/${roomCode}` : ''
@@ -117,11 +160,13 @@ export default function Lobby(){
         <div className="grid two">
           <div>
             <label className="small">Código de sala</label>
-            <input className="input" placeholder="p. ej. 123456" value={roomCode} onChange={e => setRoomCode(e.target.value.trim())} />
+            <input className="input" placeholder="p. ej. 123456"
+              value={roomCode} onChange={e => setRoomCode(e.target.value.trim())} />
           </div>
           <div>
             <label className="small">Tu nombre</label>
-            <input className="input" placeholder="Nombre visible" value={name} onChange={e => setName(e.target.value)} />
+            <input className="input" placeholder="Nombre visible"
+              value={name} onChange={e => setName(e.target.value)} />
           </div>
         </div>
         <div className="row" style={{marginTop:12}}>
