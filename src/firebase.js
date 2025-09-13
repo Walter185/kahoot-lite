@@ -17,8 +17,7 @@ export const db = getFirestore(app)
 export const now = () => serverTimestamp()
 
 export async function ensureAnonAuth(){
-  if(!auth.currentUser){
-    await signInAnonymously(auth)
-  }
-  return new Promise(resolve => onAuthStateChanged(auth, u => u && resolve(u)))
+  if (auth.currentUser) return auth.currentUser
+  const cred = await signInAnonymously(auth)
+  return cred.user
 }

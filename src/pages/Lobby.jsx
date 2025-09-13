@@ -22,22 +22,26 @@ export default function Lobby(){
 
   useEffect(() => { ensureAnonAuth() }, [])
 
-  async function createRoom(){
-    setCreating(true)
-    const u = auth.currentUser
-    const id = code6()
-    const ref = doc(db, 'rooms', id)
-    await setDoc(ref, {
-      hostId: u.uid,
-      createdAt: now(),
-      state: 'lobby',
-      currentQuestionIndex: -1,
-      questionStart: null,
-      quiz: sampleQuiz,
-    })
-    setCreating(false)
-    nav(`/host/${id}`)
-  }
+  // src/pages/Lobby.js (o .jsx / .tsx)
+async function createRoom(){
+  setCreating(true)
+  // 🔐 Asegura que haya usuario anónimo antes de escribir
+  const u = await ensureAnonAuth()
+
+  const id = code6()
+  const ref = doc(db, 'rooms', id)
+  await setDoc(ref, {
+    hostId: u.uid,            // ← ahora las reglas lo permiten
+    createdAt: now(),
+    state: 'lobby',
+    currentQuestionIndex: -1,
+    questionStart: null,
+    quiz: sampleQuiz
+  })
+  setCreating(false)
+  nav(`/host/${id}`)
+}
+
 
   async function joinRoom(){
     if(!roomCode) return
