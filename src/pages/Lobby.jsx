@@ -62,14 +62,17 @@ export default function Lobby(){
 
   useEffect(() => { ensureAnonAuth() }, [])
 
+  const cleanName = (name || '').replace(/\s+/g, ' ').trim()
+  const isNameValid = cleanName.length >= 2
+  const isJoinEnabled = roomCode && isNameValid
+
   // Crear sala con transacción: reserva code -> roomId y crea room
   async function createRoom(){
     setCreating(true)
     try{
       const u = await ensureAnonAuth()
 
-      // Transacción: intenta hasta lograr un code libre
-      const { roomId, code } = await runTransaction(db, async (tx) => {
+      const { roomId } = await runTransaction(db, async (tx) => {
         // genera code y chequea alias
         let codeTry = code6()
         let aliasRef = doc(db, 'roomCodes', codeTry)
@@ -110,7 +113,6 @@ export default function Lobby(){
         return { roomId: roomIdAuto, code: codeTry }
       })
 
-      // Navegamos por roomId (la ruta es /host/:roomId)
       nav(`/host/${roomId}`)
     } catch (e) {
       console.error(e)
@@ -123,24 +125,37 @@ export default function Lobby(){
     }
   }
 
-  // Unirse: resuelve code → roomId y navega al player por roomId
+  // Unirse: requiere nombre válido y resuelve code → roomId
   async function joinRoom(){
+    const trimmed = cleanName
+    if (trimmed.length < 2) {
+      alert('Ingresá tu nombre (mínimo 2 caracteres).')
+      return
+    }
+
     if(!roomCode) return
     const aliasRef = doc(db, 'roomCodes', roomCode)
     const aliasSnap = await getDoc(aliasRef)
     if(!aliasSnap.exists()){
-      alert('Código inválido o sala inexistente.')
+      // Fallback opcional: intentar rooms/{roomCode} si aún usás el esquema viejo
+      const roomRefLegacy = doc(db, 'rooms', roomCode)
+      const roomSnapLegacy = await getDoc(roomRefLegacy)
+      if (!roomSnapLegacy.exists()) {
+        alert('Código inválido o sala inexistente.')
+        return
+      }
+      nav(`/play/${roomCode}?name=${encodeURIComponent(trimmed.slice(0, 20))}`)
       return
     }
     const { roomId } = aliasSnap.data()
-    // (Opcional: comprobá que la sala exista)
+    // (Opcional: comprobar que la sala exista)
     const roomRef = doc(db, 'rooms', roomId)
     const roomSnap = await getDoc(roomRef)
     if(!roomSnap.exists()){
       alert('La sala ya no está disponible.')
       return
     }
-    nav(`/play/${roomId}?name=${encodeURIComponent(name || 'Jugador')}`)
+    nav(`/play/${roomId}?name=${encodeURIComponent(trimmed.slice(0, 20))}`)
   }
 
   const shareUrl = roomCode ? `${window.location.origin}/play/${roomCode}` : ''
@@ -160,17 +175,37 @@ export default function Lobby(){
         <div className="grid two">
           <div>
             <label className="small">Código de sala</label>
-            <input className="input" placeholder="p. ej. 123456"
-              value={roomCode} onChange={e => setRoomCode(e.target.value.trim())} />
+            <input
+              className="input"
+              placeholder="p. ej. 123456"
+              value={roomCode}
+              onChange={e => setRoomCode(e.target.value.trim())}
+              inputMode="numeric"
+              pattern="[0-9]*"
+              maxLength={6}
+            />
           </div>
           <div>
-            <label className="small">Tu nombre</label>
-            <input className="input" placeholder="Nombre visible"
-              value={name} onChange={e => setName(e.target.value)} />
+            <label className="small">Tu nombre (obligatorio)</label>
+            <input
+              className="input"
+              placeholder="Nombre visible"
+              value={name}
+              onChange={e => setName(e.target.value)}
+              maxLength={20}
+              required
+            />
+            {!isNameValid && name.length > 0 && (
+              <div className="small" style={{color:'#fca5a5', marginTop:6}}>
+                Mínimo 2 caracteres.
+              </div>
+            )}
           </div>
         </div>
         <div className="row" style={{marginTop:12}}>
-          <button className="btn secondary" onClick={joinRoom}>Unirme</button>
+          <button className="btn secondary" onClick={joinRoom} disabled={!isJoinEnabled}>
+            Unirme
+          </button>
           {roomCode && <span className="small">Link directo: <code>{shareUrl}</code></span>}
         </div>
       </div>

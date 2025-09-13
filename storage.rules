@@ -1,46 +1,17 @@
 rules_version = '2';
-service cloud.firestore {
-  match /databases/{database}/documents {
-    function isSignedIn() { return request.auth != null; }
-
-    // ---------- ROOMS ----------
-    match /rooms/{roomId} {
+service firebase.storage {
+  match /b/{bucket}/o {
+    // Archivos en /avatars/<uid>/*
+    match /avatars/{uid}/{allPaths=**} {
+      // cualquiera puede leer los avatares
       allow read: if true;
-
-      // Crear sala: host autenticado y que el hostId del body sea el user
-      allow create: if isSignedIn()
-        && request.resource.data.hostId == request.auth.uid;
-
-      // Actualizar / borrar: solo el host de esa sala
-      allow update, delete: if isSignedIn()
-        && resource.data.hostId == request.auth.uid;
-
-      // Subcolección de jugadores
-      match /players/{playerId} {
-        allow read: if true;
-
-        // Cada jugador crea su propio doc
-        allow create: if isSignedIn()
-          && request.auth.uid == playerId;
-
-        // Cada jugador solo actualiza su doc; el host puede puntuar
-        allow update: if isSignedIn() && (
-          request.auth.uid == playerId ||
-          get(/databases/$(database)/documents/rooms/$(roomId)).data.hostId == request.auth.uid
-        );
-      }
+      // solo el dueño puede escribir en su carpeta
+      allow write: if request.auth != null && request.auth.uid == uid;
     }
 
-    // ---------- ROOM CODES (alias code -> roomId) ----------
-    match /roomCodes/{code} {
-      allow read: if true;
-
-      // Solo crear (no sobrescribir): el que crea debe ser el host indicado
-      allow create: if isSignedIn()
-        && request.resource.data.hostId == request.auth.uid;
-
-      // No permitir update/delete para evitar colisiones/robos de código
-      allow update, delete: if false;
+    // Todo lo demás, bloqueado
+    match /{allPaths=**} {
+      allow read, write: if false;
     }
   }
 }
