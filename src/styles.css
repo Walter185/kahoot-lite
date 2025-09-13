@@ -143,3 +143,25 @@ h1,h2,h3{ margin:0 0 10px 0; }
   .option { min-height: 64px; font-size: 1.05rem; }
   .badge { padding: 8px 12px; }
 }
+
+/* ===== Countdown emocionante ===== */
+.badge.cd { font-variant-numeric: tabular-nums; }
+
+/* Verde / Amarillo / Rojo */
+.cd-green  { background: rgba(34,197,94,.15);  border-color: rgba(34,197,94,.45);  color:#86efac; }
+.cd-yellow { background: rgba(250,204,21,.15); border-color: rgba(250,204,21,.45); color:#fde68a; }
+.cd-red    { background: rgba(239,68,68,.18);  border-color: rgba(239,68,68,.55); color:#fecaca; }
+
+/* Animaciones */
+.cd-pulse { animation: cdPulse 1s ease-in-out infinite; }
+.cd-blink { animation: cdBlink .75s steps(2, jump-none) infinite; }
+
+@keyframes cdPulse {
+  0% { transform: scale(1); }
+  50%{ transform: scale(1.06); }
+  100%{ transform: scale(1); }
+}
+@keyframes cdBlink {
+  0%, 100% { opacity: 1; }
+  50%      { opacity: .35; }
+}

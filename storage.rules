@@ -1,17 +1,12 @@
 rules_version = '2';
+
+// Craft rules based on data in your Firestore database
+// allow write: if firestore.get(
+//    /databases/(default)/documents/users/$(request.auth.uid)).data.isAdmin;
 service firebase.storage {
   match /b/{bucket}/o {
-    // Archivos en /avatars/<uid>/*
-    match /avatars/{uid}/{allPaths=**} {
-      // cualquiera puede leer los avatares
-      allow read: if true;
-      // solo el dueño puede escribir en su carpeta
-      allow write: if request.auth != null && request.auth.uid == uid;
-    }
-
-    // Todo lo demás, bloqueado
     match /{allPaths=**} {
-      allow read, write: if true;
+      allow read, write: if false;
     }
   }
 }

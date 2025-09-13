@@ -2,7 +2,8 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { useLocation, useNavigate, useParams } from 'react-router-dom'
 import { auth, db, ensureAnonAuth } from '../firebase'
 import {
-  doc, onSnapshot, setDoc, serverTimestamp, updateDoc, getDoc, collection
+  doc, onSnapshot, setDoc, serverTimestamp, updateDoc, getDoc,
+  collection, query, orderBy
 } from 'firebase/firestore'
 import QuestionCard from '../components/QuestionCard'
 import WinnerCelebration from '../components/WinnerCelebration'
@@ -12,20 +13,32 @@ function useQuery(){
   return useMemo(() => new URLSearchParams(search), [search])
 }
 
+/** Clases para el badge del countdown según segundos restantes */
+function cdClass(remaining, total){
+  if (remaining == null || total == null) return 'badge'
+  const r = Number(remaining)
+  if (r <= 3) return 'badge cd cd-red cd-blink'        // < 3s: rojo intermitente
+  const pct = r / total
+  if (pct <= 0.25) return 'badge cd cd-red cd-pulse'    // 25%: rojo con pulso
+  if (pct <= 0.5)  return 'badge cd cd-yellow cd-pulse' // 50%: amarillo con pulso
+  return 'badge cd cd-green'                            // resto: verde
+}
+
 export default function Player(){
   const { roomId } = useParams()
   const qparams = useQuery()
   const [room, setRoom] = useState(null)
+  const [players, setPlayers] = useState([])        // ranking en vivo
+  const [playerCount, setPlayerCount] = useState(0) // inscritos
   const [selected, setSelected] = useState(null)
   const [lock, setLock] = useState(false)
   const [remaining, setRemaining] = useState(null)
   const [showEndCelebration, setShowEndCelebration] = useState(false)
   const [showPauseCelebration, setShowPauseCelebration] = useState(false)
-  const [playerCount, setPlayerCount] = useState(0) // 👈 inscritos
   const questionStartMs = useRef(null)
   const nav = useNavigate()
 
-  // 1) Asegurar auth anónimo y crear (si no existe) mi doc de jugador
+  // 1) Auth anónimo + crear mi doc si no existe
   useEffect(() => {
     (async () => {
       try{
@@ -41,7 +54,7 @@ export default function Player(){
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [roomId])
 
-  // 2) Suscripción al documento de la sala
+  // 2) Sala (estado general)
   useEffect(() => {
     const roomRef = doc(db,'rooms',roomId)
     const unsub = onSnapshot(roomRef, s => {
@@ -54,7 +67,7 @@ export default function Player(){
         setLock(false)
       }
 
-      // 🎉 mostrar celebración al finalizar (para todos)
+      // 🎉 Fin del juego: cartel para todos
       if(r.state === 'ended' && r.winner){
         setShowEndCelebration(true)
         const t = setTimeout(() => setShowEndCelebration(false), 4500)
@@ -64,18 +77,22 @@ export default function Player(){
     return () => unsub()
   }, [roomId])
 
-  // 3) Suscripción al conteo de jugadores (inscritos)
+  // 3) Ranking en vivo (y contador de inscritos)
   useEffect(() => {
-    const playersRef = collection(db,'rooms',roomId,'players')
-    const unsub = onSnapshot(playersRef, snap => setPlayerCount(snap.size))
+    const qPlayers = query(collection(db,'rooms',roomId,'players'), orderBy('score','desc'))
+    const unsub = onSnapshot(qPlayers, snap => {
+      const arr = snap.docs.map(d => ({ id:d.id, ...d.data() }))
+      setPlayers(arr)
+      setPlayerCount(snap.size)
+    })
     return () => unsub()
   }, [roomId])
 
-  // 4) Celebración de "Líder momentáneo" cuando el host pausa
+  // 4) Celebración corta al pausar
   useEffect(() => {
     if (room?.state === 'question' && room?.paused && room?.leader) {
       setShowPauseCelebration(true)
-      const t = setTimeout(() => setShowPauseCelebration(false), 1800)
+      const t = setTimeout(() => setShowPauseCelebration(false), 1600)
       return () => clearTimeout(t)
     }
   }, [room?.paused, room?.leader?.id, room?.state])
@@ -102,6 +119,7 @@ export default function Player(){
 
   const q = room?.quiz?.questions?.[room?.currentQuestionIndex ?? -1]
   const reveal = room?.state === 'reveal'
+  const totalTime = q?.timeLimitSec ?? null
 
   // ⏱️ Cuenta regresiva con soporte de pausa
   useEffect(() => {
@@ -126,6 +144,30 @@ export default function Player(){
 
   if(!room) return <div className="card">Conectando...</div>
 
+  // Top 1 como fallback si por alguna razón no viniera "leader" en la pausa
+  const topPlayer = players[0]
+  const visibleLeader = room?.leader || (room?.paused ? (topPlayer && { name: topPlayer.name, score: topPlayer.score }) : null)
+
+  // Clases dinámicas del badge (si está pausado, se ve neutro)
+  const badgeCls = room?.state === 'question'
+    ? (room.paused ? 'badge' : cdClass(remaining, totalTime))
+    : 'badge'
+
+  // 🎯 Lista de quienes acertaron la ronda actual (durante REVEAL)
+  const correctList = (() => {
+    if (!room || room.state !== 'reveal') return []
+    const idx = room.currentQuestionIndex ?? -1
+    if (idx < 0) return []
+    const qCorrectIndex = room.quiz?.questions?.[idx]?.correctIndex
+    return players.filter(p => {
+      const a = p.answers?.[idx]
+      if (!a) return false
+      if (typeof a.correct === 'boolean') return a.correct
+      // fallback si aún no se marcó .correct: comparar índice
+      return typeof qCorrectIndex === 'number' && a.index === qCorrectIndex
+    }).map(p => ({ id: p.id, name: p.name || 'Jugador' }))
+  })()
+
   return (
     <div className="grid">
       {/* 🎉 Celebración de fin para todos los jugadores */}
@@ -133,17 +175,43 @@ export default function Player(){
         <WinnerCelebration name={room.winner.name} subtitle="¡Ganó la partida!" />
       )}
 
-      {/* 🎊 Lider momentáneo cuando el host pausa */}
+      {/* 🎊 Mini celebración al pausar */}
       {showPauseCelebration && room?.leader && (
         <WinnerCelebration name={room.leader.name} subtitle="Líder momentáneo" durationMs={1600} />
+      )}
+
+      {/* 🏅 Cartel persistente de líder mientras está PAUSADO */}
+      {room.state === 'question' && room.paused && visibleLeader && (
+        <div className="card" style={{position:'sticky', top:8, zIndex:10, textAlign:'center'}}>
+          <div className="cele-emoji" style={{fontSize:'1.6rem'}}>🎉</div>
+          <div style={{fontWeight:800, fontSize:'1.25rem'}}>{visibleLeader.name}</div>
+          <div className="small">Líder momentáneo {typeof visibleLeader.score === 'number' ? `• ${visibleLeader.score} pts` : ''}</div>
+        </div>
+      )}
+
+      {/* 🎯 Lista de aciertos de la ronda (durante REVEAL) */}
+      {room.state === 'reveal' && (
+        <div className="card" style={{position:'sticky', top:8, zIndex:10, textAlign:'center'}}>
+          <div className="cele-emoji" style={{fontSize:'1.6rem'}}>🎯</div>
+          <div style={{fontWeight:800, fontSize:'1.15rem', marginBottom:6}}>
+            {correctList.length ? '¡Acertaron!' : 'Nadie acertó esta 😅'}
+          </div>
+          {!!correctList.length && (
+            <div className="row" style={{justifyContent:'center'}}>
+              {correctList.map(p => (
+                <span key={p.id} className="badge">{p.name}</span>
+              ))}
+            </div>
+          )}
+        </div>
       )}
 
       <div className="card">
         <div className="row" style={{justifyContent:'space-between'}}>
           <h1>Sala {room.code || room.id}</h1>
-          <span className="badge">
+          <span className={badgeCls}>
             {room.state === 'question'
-              ? (room.paused ? 'Pausado' : `${remaining ?? q?.timeLimitSec ?? 0}s`)
+              ? (room.paused ? 'Pausado' : `${remaining ?? totalTime ?? 0}s`)
               : room.state}
           </span>
         </div>
@@ -176,6 +244,22 @@ export default function Player(){
           countdownSec={remaining}
         />
       )}
+
+      {/* 🏆 Ranking en vivo para todos los participantes */}
+      <div className="card">
+        <h2>Tabla de posiciones</h2>
+        <table className="leaderboard">
+          <thead><tr><th>Jugador</th><th>Puntos</th></tr></thead>
+          <tbody>
+            {[...players].map(p => (
+              <tr key={p.id}>
+                <td>{p.name || 'Jugador'}</td>
+                <td>{p.score || 0}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
     </div>
   )
 }
