@@ -1,35 +1,58 @@
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
-    function isSignedIn() { return request.auth != null; }
 
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    // ¿Es el host de esta sala?
+    function isHost(roomId) {
+      return isSignedIn() &&
+        get(/databases/$(database)/documents/rooms/$(roomId)).data.hostId == request.auth.uid;
+    }
+
+    // --------- ROOMS ---------
     match /rooms/{roomId} {
+      // Lectura pública (los jugadores deben poder leer el estado)
       allow read: if true;
 
-      // Crear sala: host autenticado y que el hostId sea el autor
-      allow create: if isSignedIn()
-        && request.resource.data.hostId == request.auth.uid;
+      // Crear sala: requiere auth y que el body declare hostId = usuario
+      allow create: if isSignedIn() && request.resource.data.hostId == request.auth.uid;
 
-      // Actualizar flujo (solo host) → estado/índice/tiempo
-      allow update: if isSignedIn()
-        && resource.data.hostId == request.auth.uid;
+      // Actualizar / borrar sala: solo el host de ESA sala
+      // (Permite actualizar campos como state, currentQuestionIndex, questionStart,
+      //  paused, pauseStart, pausedAccumMs, code, winner, winnersAt, quiz, etc.)
+      allow update, delete: if isHost(roomId);
 
-      // (Opcional) borrar sala: solo host
-      allow delete: if isSignedIn() && resource.data.hostId == request.auth.uid;
-
+      // --------- PLAYERS (subcolección) ---------
       match /players/{playerId} {
+        // Lectura pública para ver scoreboard en tiempo real
         allow read: if true;
 
-        // Crear jugador: solo su propio doc
+        // Crear doc de jugador: cada usuario crea SOLO su doc
+        // (nombre, score=0, joinedAt, answers vacías)
         allow create: if isSignedIn()
-          && request.auth.uid == playerId;
+          && request.auth.uid == playerId
+          && request.resource.data.keys().hasOnly(['name','score','joinedAt','answers']);
 
-        // Update: jugador solo sus respuestas; host puede puntuar/corregir
+        // Actualizar:
+        // - el jugador SOLO puede cambiar sus 'answers' o 'name'
+        // - el host puede actualizar cualquier campo (p. ej. 'score', flags de 'answers')
         allow update: if isSignedIn() && (
-          request.auth.uid == playerId ||
-          get(/databases/$(database)/documents/rooms/$(roomId)).data.hostId == request.auth.uid
+          (request.auth.uid == playerId &&
+            request.resource.data.diff(resource.data).changedKeys().hasOnly(['answers','name'])) ||
+          isHost(roomId)
         );
       }
+    }
+
+    // --------- ROOM CODES (alias code -> roomId) ---------
+    match /roomCodes/{code} {
+      allow read: if true;
+      // Solo "create" (sin update/delete) para reservar códigos de 6 dígitos de forma atómica
+      allow create: if isSignedIn() && request.resource.data.hostId == request.auth.uid;
+      allow update, delete: if false;
     }
   }
 }
