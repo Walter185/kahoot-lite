@@ -7,6 +7,7 @@ import {
 } from 'firebase/firestore'
 import QuestionCard from '../components/QuestionCard'
 import WinnerCelebration from '../components/WinnerCelebration'
+import CreditsModal from '../components/CreditsModal'
 
 function useQuery(){
   const { search } = useLocation()
@@ -35,6 +36,7 @@ export default function Player(){
   const [remaining, setRemaining] = useState(null)
   const [showEndCelebration, setShowEndCelebration] = useState(false)
   const [showPauseCelebration, setShowPauseCelebration] = useState(false)
+  const [showInfo, setShowInfo] = useState(false)
   const questionStartMs = useRef(null)
   const nav = useNavigate()
 
@@ -120,6 +122,8 @@ export default function Player(){
   const q = room?.quiz?.questions?.[room?.currentQuestionIndex ?? -1]
   const reveal = room?.state === 'reveal'
   const totalTime = q?.timeLimitSec ?? null
+  const totalQ = room?.quiz?.questions?.length ?? 0
+  const questionNumber = (room?.currentQuestionIndex ?? -1) + 1
 
   // ⏱️ Cuenta regresiva con soporte de pausa
   useEffect(() => {
@@ -207,13 +211,25 @@ export default function Player(){
       )}
 
       <div className="card">
-        <div className="row" style={{justifyContent:'space-between'}}>
+        <div className="row" style={{justifyContent:'space-between', alignItems:'center'}}>
           <h1>Sala {room.code || room.id}</h1>
-          <span className={badgeCls}>
-            {room.state === 'question'
-              ? (room.paused ? 'Pausado' : `${remaining ?? totalTime ?? 0}s`)
-              : room.state}
-          </span>
+          <div className="row" style={{gap:8, alignItems:'center'}}>
+            {/* Botón Info: solo cuando NO está en pregunta */}
+            {room?.state !== 'question' && (
+              <button className="btn small secondary" onClick={()=>setShowInfo(true)}>ℹ️ Info</button>
+            )}
+            {/* Progreso Pregunta X/Total */}
+            {room.state !== 'lobby' && totalQ > 0 && questionNumber > 0 && (
+              <span className="small" style={{opacity:0.8}}>
+                Pregunta <strong>{questionNumber}/{totalQ}</strong>
+              </span>
+            )}
+            <span className={badgeCls}>
+              {room.state === 'question'
+                ? (room.paused ? 'Pausado' : `${remaining ?? totalTime ?? 0}s`)
+                : room.state}
+            </span>
+          </div>
         </div>
 
         {room.state === 'lobby' && (
@@ -260,6 +276,9 @@ export default function Player(){
           </tbody>
         </table>
       </div>
+
+      {/* Modal de créditos */}
+      <CreditsModal open={showInfo} onClose={()=>setShowInfo(false)} />
     </div>
   )
 }

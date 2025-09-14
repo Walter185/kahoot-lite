@@ -7,8 +7,8 @@ export default function App(){
   return (
     <div className="container">
       <header className="row" style={{justifyContent:'space-between', marginBottom:18}}>
-        <Link to="/" style={{fontWeight:800, letterSpacing:.5}}>Kahoot</Link>
-        <div className="small">Pelle 2da 4ta</div>
+        <Link to="/" style={{fontWeight:800, letterSpacing:.5}}>Geografía</Link>
+        <div className="small">Pelle 2°4ta TM</div>
       </header>
       <Routes>
         <Route path="/" element={<Lobby/>} />

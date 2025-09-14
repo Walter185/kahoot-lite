@@ -4,6 +4,7 @@ import { db, ensureAnonAuth, now } from '../firebase'
 import {
   doc, setDoc, getDoc, runTransaction, collection
 } from 'firebase/firestore'
+import CreditsModal from '../components/CreditsModal'
 
 const sampleQuiz = {
   title: 'Modelo agroexportador (AR, 1870–1930)',
@@ -47,9 +48,32 @@ const sampleQuiz = {
         'Concentración de la tierra y desplazamiento de pequeños productores'
       ],
       correctIndex: 3, timeLimitSec: 25
+    },
+    // 8
+    {
+      text: '¿Qué producto caracterizó la economía cubana dentro del modelo agroexportador?',
+      options: ['Tabaco','Café','Azúcar','Salitre'],
+      correctIndex: 2, timeLimitSec: 20
+    },
+    // 9
+    {
+      text: '¿Qué país latinoamericano se especializó en la producción de café dentro del modelo agroexportador?',
+      options: ['Cuba','Brasil','Chile','Argentina'],
+      correctIndex: 1, timeLimitSec: 20
+    },
+    // 10
+    {
+      text: '¿Qué consecuencia ambiental generó el modelo agroexportador en Argentina?',
+      options: [
+        'Reforestación masiva',
+        'Sobreexplotación del suelo y deforestación',
+        'Reducción del monocultivo',
+        'Detuvo la concentración de la tierra'
+      ],
+      correctIndex: 1, timeLimitSec: 20
     }
   ]
-}
+};
 
 // Código de 6 dígitos numérico
 function code6(){ return Math.floor(100000 + Math.random()*900000).toString() }
@@ -58,6 +82,7 @@ export default function Lobby(){
   const [roomCode, setRoomCode] = useState('')
   const [name, setName] = useState('')
   const [creating, setCreating] = useState(false)
+  const [showInfo, setShowInfo] = useState(false)
   const nav = useNavigate()
 
   useEffect(() => { ensureAnonAuth() }, [])
@@ -162,6 +187,12 @@ export default function Lobby(){
 
   return (
     <div className="grid">
+      {/* Header simple del lobby con botón info */}
+      <div className="row" style={{justifyContent:'space-between', alignItems:'center'}}>
+        <h1>Kahoot · Agroexportador</h1>
+        <button className="btn small secondary" onClick={()=>setShowInfo(true)}>ℹ️ Info</button>
+      </div>
+
       <div className="card">
         <h1>Crear sala</h1>
         <p className="small">Se genera una sala con el cuestionario “{sampleQuiz.title}”.</p>
@@ -209,6 +240,7 @@ export default function Lobby(){
           {roomCode && <span className="small">Link directo: <code>{shareUrl}</code></span>}
         </div>
       </div>
+      <CreditsModal open={showInfo} onClose={()=>setShowInfo(false)} />
     </div>
   )
 }

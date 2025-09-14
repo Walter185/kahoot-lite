@@ -7,6 +7,7 @@ import {
 } from 'firebase/firestore'
 import QuestionCard from '../components/QuestionCard'
 import WinnerCelebration from '../components/WinnerCelebration'
+import CreditsModal from '../components/CreditsModal'
 
 /** (opcional) badge de cuenta regresiva con colores */
 function cdClass(remaining, total){
@@ -26,6 +27,7 @@ export default function Host(){
   const [remaining, setRemaining] = useState(null)
   const [autoRevealedAtIndex, setAutoRevealedAtIndex] = useState(-1)
   const [lastConfettiQ, setLastConfettiQ] = useState(-1)
+  const [showInfo, setShowInfo] = useState(false)
   const nav = useNavigate()
 
   useEffect(() => { ensureAnonAuth() }, [])
@@ -43,6 +45,7 @@ export default function Host(){
   const meIsHost = room && auth.currentUser && room.hostId === auth.currentUser.uid
   const q = room?.quiz?.questions?.[room?.currentQuestionIndex ?? -1]
   const totalQ = room?.quiz?.questions?.length ?? 0
+  const questionNumber = (room?.currentQuestionIndex ?? -1) + 1 // para “X/total”
 
   async function startGame(){
     if(!meIsHost) return
@@ -119,7 +122,7 @@ export default function Host(){
     }
   }
 
-  // 🔄 REINICIAR: vuelve a lobby, limpia ganador/líder y pone scores en 0
+  // 🔄 REINICIAR
   async function resetGame(){
     if(!meIsHost) return
     const ok = window.confirm('¿Reiniciar partida? Se pondrán los puntajes en 0 y volverá al lobby.')
@@ -167,7 +170,6 @@ export default function Host(){
   // Avanzar automáticamente tras mostrar reveal unos segundos
   useEffect(() => {
     if(!meIsHost || !room || room.state !== 'reveal') return
-    // confeti una sola vez por pregunta
     if (room.currentQuestionIndex !== lastConfettiQ) {
       (async () => {
         try{
@@ -212,7 +214,7 @@ export default function Host(){
         <WinnerCelebration name={room.winner.name} subtitle="¡Ganó la partida!" />
       )}
 
-      {/* 🎯 Cartel de aciertos parciales (igual al que ven los jugadores) */}
+      {/* 🎯 Cartel de aciertos parciales */}
       {room.state === 'reveal' && (
         <div className="cele-overlay" style={{background:'transparent', pointerEvents:'none'}}>
           <div className="cele-card">
@@ -235,17 +237,29 @@ export default function Host(){
       )}
 
       <div className="card">
-        <div className="row" style={{justifyContent:'space-between'}}>
+        <div className="row" style={{justifyContent:'space-between', alignItems:'center'}}>
           <h1>Sala {room.code || room.id}</h1>
-          <span className={
-            room.state === 'question'
-              ? (room.paused ? 'badge' : cdClass(remaining, q?.timeLimitSec))
-              : 'badge'
-          }>
-            {room.state === 'question'
-              ? (room.paused ? 'Pausado' : `${remaining ?? q?.timeLimitSec ?? 0}s`)
-              : room.state}
-          </span>
+          <div className="row" style={{gap:8, alignItems:'center'}}>
+            {/* Botón Info: solo cuando NO está en pregunta */}
+            {room.state !== 'question' && (
+              <button className="btn small secondary" onClick={()=>setShowInfo(true)}>ℹ️ Info</button>
+            )}
+            {/* Progreso Pregunta X/Total */}
+            {room.state !== 'lobby' && totalQ > 0 && questionNumber > 0 && (
+              <span className="small" style={{opacity:0.8}}>
+                Pregunta <strong>{questionNumber}/{totalQ}</strong>
+              </span>
+            )}
+            <span className={
+              room.state === 'question'
+                ? (room.paused ? 'badge' : cdClass(remaining, q?.timeLimitSec))
+                : 'badge'
+            }>
+              {room.state === 'question'
+                ? (room.paused ? 'Pausado' : `${remaining ?? q?.timeLimitSec ?? 0}s`)
+                : room.state}
+            </span>
+          </div>
         </div>
         <p className="small">Jugadores conectados: {players.length}</p>
 
@@ -291,6 +305,9 @@ export default function Host(){
           </p>
         )}
       </div>
+
+      {/* Modal de créditos */}
+      <CreditsModal open={showInfo} onClose={()=>setShowInfo(false)} />
     </div>
   )
 }
