@@ -1,3 +1,4 @@
+// src/pages/Player.jsx
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useLocation, useNavigate, useParams } from 'react-router-dom'
 import { auth, db, ensureAnonAuth } from '../firebase'
@@ -14,23 +15,22 @@ function useQuery(){
   return useMemo(() => new URLSearchParams(search), [search])
 }
 
-/** Clases para el badge del countdown según segundos restantes */
 function cdClass(remaining, total){
   if (remaining == null || total == null) return 'badge'
   const r = Number(remaining)
-  if (r <= 3) return 'badge cd cd-red cd-blink'        // < 3s: rojo intermitente
+  if (r <= 3) return 'badge cd cd-red cd-blink'
   const pct = r / total
-  if (pct <= 0.25) return 'badge cd cd-red cd-pulse'    // 25%: rojo con pulso
-  if (pct <= 0.5)  return 'badge cd cd-yellow cd-pulse' // 50%: amarillo con pulso
-  return 'badge cd cd-green'                            // resto: verde
+  if (pct <= 0.25) return 'badge cd cd-red cd-pulse'
+  if (pct <= 0.5)  return 'badge cd cd-yellow cd-pulse'
+  return 'badge cd cd-green'
 }
 
 export default function Player(){
   const { roomId } = useParams()
   const qparams = useQuery()
   const [room, setRoom] = useState(null)
-  const [players, setPlayers] = useState([])        // ranking en vivo
-  const [playerCount, setPlayerCount] = useState(0) // inscritos
+  const [players, setPlayers] = useState([])
+  const [playerCount, setPlayerCount] = useState(0)
   const [selected, setSelected] = useState(null)
   const [lock, setLock] = useState(false)
   const [remaining, setRemaining] = useState(null)
@@ -40,7 +40,7 @@ export default function Player(){
   const questionStartMs = useRef(null)
   const nav = useNavigate()
 
-  // 1) Auth anónimo + crear mi doc si no existe
+  // Auth anónimo + crear doc si no existe
   useEffect(() => {
     (async () => {
       try{
@@ -53,10 +53,9 @@ export default function Player(){
         }
       } catch(err){ console.error(err) }
     })()
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [roomId])
 
-  // 2) Sala (estado general)
+  // Sala (estado general)
   useEffect(() => {
     const roomRef = doc(db,'rooms',roomId)
     const unsub = onSnapshot(roomRef, s => {
@@ -69,7 +68,6 @@ export default function Player(){
         setLock(false)
       }
 
-      // 🎉 Fin del juego: cartel para todos
       if(r.state === 'ended' && r.winner){
         setShowEndCelebration(true)
         const t = setTimeout(() => setShowEndCelebration(false), 4500)
@@ -79,7 +77,7 @@ export default function Player(){
     return () => unsub()
   }, [roomId])
 
-  // 3) Ranking en vivo (y contador de inscritos)
+  // Ranking en vivo
   useEffect(() => {
     const qPlayers = query(collection(db,'rooms',roomId,'players'), orderBy('score','desc'))
     const unsub = onSnapshot(qPlayers, snap => {
@@ -90,7 +88,7 @@ export default function Player(){
     return () => unsub()
   }, [roomId])
 
-  // 4) Celebración corta al pausar
+  // Celebración al pausar
   useEffect(() => {
     if (room?.state === 'question' && room?.paused && room?.leader) {
       setShowPauseCelebration(true)
@@ -106,7 +104,6 @@ export default function Player(){
     const nowMs = Date.now()
     const start = questionStartMs.current || nowMs
 
-    // Descontar pausas del tiempo tomado
     const pausedSoFar = (room.pausedAccumMs || 0) +
       (room.paused && room.pauseStart?.toMillis ? (Date.now() - room.pauseStart.toMillis()) : 0)
     const timeTakenMs = Math.max(0, (nowMs - start) - pausedSoFar)
@@ -125,7 +122,7 @@ export default function Player(){
   const totalQ = room?.quiz?.questions?.length ?? 0
   const questionNumber = (room?.currentQuestionIndex ?? -1) + 1
 
-  // ⏱️ Cuenta regresiva con soporte de pausa
+  // Cuenta regresiva
   useEffect(() => {
     if (!room || room.state !== 'question' || !q || !room.questionStart?.toMillis) {
       setRemaining(null)
@@ -148,16 +145,12 @@ export default function Player(){
 
   if(!room) return <div className="card">Conectando...</div>
 
-  // Top 1 como fallback si por alguna razón no viniera "leader" en la pausa
   const topPlayer = players[0]
   const visibleLeader = room?.leader || (room?.paused ? (topPlayer && { name: topPlayer.name, score: topPlayer.score }) : null)
-
-  // Clases dinámicas del badge (si está pausado, se ve neutro)
   const badgeCls = room?.state === 'question'
     ? (room.paused ? 'badge' : cdClass(remaining, totalTime))
     : 'badge'
 
-  // 🎯 Lista de quienes acertaron la ronda actual (durante REVEAL)
   const correctList = (() => {
     if (!room || room.state !== 'reveal') return []
     const idx = room.currentQuestionIndex ?? -1
@@ -167,35 +160,67 @@ export default function Player(){
       const a = p.answers?.[idx]
       if (!a) return false
       if (typeof a.correct === 'boolean') return a.correct
-      // fallback si aún no se marcó .correct: comparar índice
       return typeof qCorrectIndex === 'number' && a.index === qCorrectIndex
     }).map(p => ({ id: p.id, name: p.name || 'Jugador' }))
   })()
 
   return (
-    <div className="grid">
-      {/* 🎉 Celebración de fin para todos los jugadores */}
+    <div className="player-wrap">
+      <style>{`
+        .player-wrap{
+          position:fixed; inset:0;
+          display:flex; flex-direction:column;
+          background:#0b1220; color:#e5e7eb;
+          overflow-y:auto;
+          padding:8px;
+        }
+        .player-header{
+          display:flex; align-items:center; justify-content:space-between;
+          padding:6px 4px 10px;
+        }
+        .player-title{
+          margin:0; font-size:1.2rem; font-weight:800; line-height:1;
+        }
+        .info-btn{
+          width:28px; height:28px; display:grid; place-items:center;
+          border-radius:8px; border:1px solid rgba(255,255,255,.12);
+          background:rgba(255,255,255,.06); color:#e5e7eb;
+          cursor:pointer; font-size:.85rem;
+        }
+        .card{ background:rgba(255,255,255,.06); border-radius:12px; padding:10px; margin-bottom:10px; }
+        .row{ display:flex; gap:8px; align-items:center; flex-wrap:wrap; }
+        .leaderboard{ width:100%; border-collapse:collapse; }
+        .leaderboard th, .leaderboard td{ padding:4px 8px; border-bottom:1px solid rgba(255,255,255,.1); text-align:left; }
+      `}</style>
+
+      {/* Header fijo Pelle + Info */}
+      <header className="player-header">
+        <h1 className="player-title">Pelle</h1>
+        <button className="info-btn" onClick={()=>setShowInfo(true)}>ℹ️</button>
+      </header>
+
+      {/* 🎉 Fin */}
       {showEndCelebration && room.winner && (
         <WinnerCelebration name={room.winner.name} subtitle="¡Ganó la partida!" />
       )}
 
-      {/* 🎊 Mini celebración al pausar */}
+      {/* 🎊 Pausa */}
       {showPauseCelebration && room?.leader && (
         <WinnerCelebration name={room.leader.name} subtitle="Líder momentáneo" durationMs={1600} />
       )}
 
-      {/* 🏅 Cartel persistente de líder mientras está PAUSADO */}
+      {/* 🏅 Líder en pausa */}
       {room.state === 'question' && room.paused && visibleLeader && (
-        <div className="card" style={{position:'sticky', top:8, zIndex:10, textAlign:'center'}}>
+        <div className="card" style={{textAlign:'center'}}>
           <div className="cele-emoji" style={{fontSize:'1.6rem'}}>🎉</div>
           <div style={{fontWeight:800, fontSize:'1.25rem'}}>{visibleLeader.name}</div>
           <div className="small">Líder momentáneo {typeof visibleLeader.score === 'number' ? `• ${visibleLeader.score} pts` : ''}</div>
         </div>
       )}
 
-      {/* 🎯 Lista de aciertos de la ronda (durante REVEAL) */}
+      {/* 🎯 Lista de aciertos */}
       {room.state === 'reveal' && (
-        <div className="card" style={{position:'sticky', top:8, zIndex:10, textAlign:'center'}}>
+        <div className="card" style={{textAlign:'center'}}>
           <div className="cele-emoji" style={{fontSize:'1.6rem'}}>🎯</div>
           <div style={{fontWeight:800, fontSize:'1.15rem', marginBottom:6}}>
             {correctList.length ? '¡Acertaron!' : 'Nadie acertó esta 😅'}
@@ -212,13 +237,8 @@ export default function Player(){
 
       <div className="card">
         <div className="row" style={{justifyContent:'space-between', alignItems:'center'}}>
-          <h1>Sala {room.code || room.id}</h1>
+          <h2>Sala {room.code || room.id}</h2>
           <div className="row" style={{gap:8, alignItems:'center'}}>
-            {/* Botón Info: solo cuando NO está en pregunta */}
-            {room?.state !== 'question' && (
-              <button className="btn small secondary" onClick={()=>setShowInfo(true)}>ℹ️ Info</button>
-            )}
-            {/* Progreso Pregunta X/Total */}
             {room.state !== 'lobby' && totalQ > 0 && questionNumber > 0 && (
               <span className="small" style={{opacity:0.8}}>
                 Pregunta <strong>{questionNumber}/{totalQ}</strong>
@@ -234,7 +254,7 @@ export default function Player(){
 
         {room.state === 'lobby' && (
           <>
-            <p className="small">Esperando a que el anfitrión inicie…</p>
+            <p className="small">Esperando al anfitrión…</p>
             <p className="small">Inscritos: <strong>{playerCount}</strong></p>
           </>
         )}
@@ -261,7 +281,7 @@ export default function Player(){
         />
       )}
 
-      {/* 🏆 Ranking en vivo para todos los participantes */}
+      {/* Ranking */}
       <div className="card">
         <h2>Tabla de posiciones</h2>
         <table className="leaderboard">
@@ -277,7 +297,6 @@ export default function Player(){
         </table>
       </div>
 
-      {/* Modal de créditos */}
       <CreditsModal open={showInfo} onClose={()=>setShowInfo(false)} />
     </div>
   )

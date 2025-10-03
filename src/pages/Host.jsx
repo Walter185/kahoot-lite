@@ -202,18 +202,44 @@ export default function Host(){
           overflow-y:auto;
           padding:8px;
         }
+
+        /* Header Pelle + info mini SIEMPRE visible */
+        .host-header{
+          display:flex; align-items:center; justify-content:space-between;
+          padding: 6px 4px 10px;
+        }
+        .host-title{
+          margin:0; font-size:1.2rem; font-weight:800; line-height:1; letter-spacing:.2px;
+        }
+        .info-btn{
+          width:28px; height:28px; display:grid; place-items:center;
+          border-radius:8px; border:1px solid rgba(255,255,255,.12);
+          background:rgba(255,255,255,.06); color:#e5e7eb;
+          cursor:pointer; font-size:.85rem;
+        }
+
         .card{ background:rgba(255,255,255,.06); border-radius:12px; padding:10px; margin-bottom:10px; }
         .row{ display:flex; gap:8px; align-items:center; flex-wrap:wrap; }
         .leaderboard{ width:100%; border-collapse:collapse; }
         .leaderboard th, .leaderboard td{ padding:4px 8px; border-bottom:1px solid rgba(255,255,255,.1); text-align:left; }
+
+        /* Celebraciones un poco más arriba en móvil */
         .cele-overlay{ position:fixed; inset:0; display:flex; align-items:flex-start; justify-content:center; padding-top:15vh; z-index:9999; }
         .cele-card{ background:#111a; border-radius:12px; padding:12px 16px; text-align:center; }
       `}</style>
 
+      {/* Header fijo */}
+      <header className="host-header">
+        <h1 className="host-title">Pelle</h1>
+        <button className="info-btn" onClick={()=>setShowInfo(true)}>ℹ️</button>
+      </header>
+
+      {/* 🎉 Celebración final */}
       {room.state === 'ended' && room.winner && (
         <WinnerCelebration name={room.winner.name} subtitle="¡Ganó la partida!" />
       )}
 
+      {/* 🎯 Aciertos parciales */}
       {room.state === 'reveal' && (
         <div className="cele-overlay">
           <div className="cele-card">
@@ -230,13 +256,32 @@ export default function Host(){
         </div>
       )}
 
+      {/* Sala + controles */}
       <div className="card">
-        <div className="row" style={{justifyContent:'space-between'}}>
-          <h1>Sala {room.code || room.id}</h1>
-          <button className="btn small secondary" onClick={()=>setShowInfo(true)}>ℹ️ Info</button>
+        <div className="row" style={{justifyContent:'space-between', alignItems:'center'}}>
+          <h2 style={{margin:0}}>Sala {room.code || room.id}</h2>
+          <div className="row" style={{gap:8, alignItems:'center'}}>
+            {room.state !== 'lobby' && totalQ > 0 && questionNumber > 0 && (
+              <span className="small" style={{opacity:0.8}}>
+                Pregunta <strong>{questionNumber}/{totalQ}</strong>
+              </span>
+            )}
+            <span className={
+              room.state === 'question'
+                ? (room.paused ? 'badge' : cdClass(remaining, q?.timeLimitSec))
+                : 'badge'
+            }>
+              {room.state === 'question'
+                ? (room.paused ? 'Pausado' : `${remaining ?? q?.timeLimitSec ?? 0}s`)
+                : room.state}
+            </span>
+          </div>
         </div>
+
         <p className="small">Jugadores: {players.length}</p>
+
         {room.state === 'lobby' && <button className="btn" onClick={startGame}>Iniciar</button>}
+
         {room.state === 'question' && (
           <div className="row">
             <button className="btn" onClick={reveal}>Revelar</button>
@@ -244,10 +289,28 @@ export default function Host(){
             <button className="btn danger" onClick={resetGame}>Reiniciar</button>
           </div>
         )}
+
+        {room.state === 'reveal' && (
+          <div className="row">
+            <button className="btn" onClick={nextQuestion}>Siguiente</button>
+            <button className="btn danger" onClick={resetGame}>Reiniciar</button>
+          </div>
+        )}
+
+        {room.state === 'ended' && (
+          <button className="btn secondary" onClick={() => nav('/')}>Volver al inicio</button>
+        )}
       </div>
 
       {(room.state === 'question' || room.state === 'reveal') && q && (
-        <QuestionCard q={q} selected={null} onSelect={()=>{}} disabled reveal={room.state==='reveal'} countdownSec={remaining} />
+        <QuestionCard
+          q={q}
+          selected={null}
+          onSelect={()=>{}}
+          disabled
+          reveal={room.state==='reveal'}
+          countdownSec={remaining}
+        />
       )}
 
       <div className="card">
