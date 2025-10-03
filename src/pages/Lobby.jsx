@@ -1,246 +1,122 @@
-import { useEffect, useState } from 'react'
+// src/pages/Lobby.jsx
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { db, ensureAnonAuth, now } from '../firebase'
-import {
-  doc, setDoc, getDoc, runTransaction, collection
-} from 'firebase/firestore'
+import { ensureAnonAuth } from '../firebase'
+import RouletteWheel from '../components/RouletteWheel'
+import WinnerCelebration from '../components/WinnerCelebration'
 import CreditsModal from '../components/CreditsModal'
 
-const sampleQuiz = {
-  title: 'Modelo agroexportador (AR, 1870–1930)',
-  questions: [
-    {
-      text: '¿En qué período histórico se consolidó el modelo agroexportador?',
-      options: ['1870-1930','1810-1850','1940-1970','1820-1910'],
-      correctIndex: 0, timeLimitSec: 20
-    },
-    {
-      text: '¿Qué producto se convirtió en el principal de exportación de Argentina?',
-      options: ['Oro','Carne y cereales','Vino','Azúcar'],
-      correctIndex: 1, timeLimitSec: 20
-    },
-    {
-      text: '¿Qué país fue el principal inversor extranjero en Argentina durante este modelo?',
-      options: ['Francia','Alemania','Estados Unidos','Gran Bretaña'],
-      correctIndex: 3, timeLimitSec: 20
-    },
-    {
-      text: '¿Qué región argentina fue la más favorecida?',
-      options: ['Noroeste','Noreste','Pampa Húmeda','La Patagonia'],
-      correctIndex: 2, timeLimitSec: 15
-    },
-    {
-      text: '¿Qué acontecimiento internacional puso en crisis el modelo agroexportador?',
-      options: ['La Segunda Guerra Mundial','La crisis de 1930','La Primera Guerra Mundial','La Revolución Industrial'],
-      correctIndex: 1, timeLimitSec: 20
-    },
-    {
-      text: '¿Qué grupo social concentraba la tierra y el poder político en Argentina?',
-      options: ['Oligarquía terrateniente','Clase obrera','Campesinos indígenas','Inmigrantes y trabajadores urbanos'],
-      correctIndex: 0, timeLimitSec: 20
-    },
-    {
-      text: '¿Cuál de las siguientes fue una consecuencia problemática del modelo agroexportador argentino entre 1870 y 1930?',
-      options: [
-        'Aumento generalizado del acceso a la propiedad rural para inmigrantes',
-        'Igual distribución de la riqueza y del poder político',
-        'Diversificación industrial en todo el país',
-        'Concentración de la tierra y desplazamiento de pequeños productores'
-      ],
-      correctIndex: 3, timeLimitSec: 25
-    },
-    // 8
-    {
-      text: '¿Qué producto caracterizó la economía cubana dentro del modelo agroexportador?',
-      options: ['Tabaco','Café','Azúcar','Salitre'],
-      correctIndex: 2, timeLimitSec: 20
-    },
-    // 9
-    {
-      text: '¿Qué país latinoamericano se especializó en la producción de café dentro del modelo agroexportador?',
-      options: ['Cuba','Brasil','Chile','Argentina'],
-      correctIndex: 1, timeLimitSec: 20
-    },
-    // 10
-    {
-      text: '¿Qué consecuencia ambiental generó el modelo agroexportador en Argentina?',
-      options: [
-        'Reforestación masiva',
-        'Sobreexplotación del suelo y deforestación',
-        'Reducción del monocultivo',
-        'Detuvo la concentración de la tierra'
-      ],
-      correctIndex: 1, timeLimitSec: 20
-    }
-  ]
-};
-
-// Código de 6 dígitos numérico
-function code6(){ return Math.floor(100000 + Math.random()*900000).toString() }
-
 export default function Lobby(){
-  const [roomCode, setRoomCode] = useState('')
-  const [name, setName] = useState('')
-  const [creating, setCreating] = useState(false)
   const [showInfo, setShowInfo] = useState(false)
+  const [selectedSubject, setSelectedSubject] = useState('Geografía')
+  const [showCelebration, setShowCelebration] = useState(false)
+  const [wheelSize, setWheelSize] = useState(260)
+  const headerRef = useRef(null)
   const nav = useNavigate()
 
   useEffect(() => { ensureAnonAuth() }, [])
 
-  const cleanName = (name || '').replace(/\s+/g, ' ').trim()
-  const isNameValid = cleanName.length >= 2
-  const isJoinEnabled = roomCode && isNameValid
+  const materias = useMemo(() => ([
+    'Geografía','Historia','Matemática','Lengua','Inglés','Biología','Física','Química'
+  ]), [])
 
-  // Crear sala con transacción: reserva code -> roomId y crea room
-  async function createRoom(){
-    setCreating(true)
-    try{
-      const u = await ensureAnonAuth()
-
-      const { roomId } = await runTransaction(db, async (tx) => {
-        // genera code y chequea alias
-        let codeTry = code6()
-        let aliasRef = doc(db, 'roomCodes', codeTry)
-        let aliasSnap = await tx.get(aliasRef)
-        let tries = 0
-        while (aliasSnap.exists()) {
-          if (++tries > 8) throw new Error('room_code_exhausted')
-          codeTry = code6()
-          aliasRef = doc(db, 'roomCodes', codeTry)
-          aliasSnap = await tx.get(aliasRef)
-        }
-
-        // crea room con ID auto
-        const roomRef = doc(collection(db, 'rooms'))
-        const roomIdAuto = roomRef.id
-
-        tx.set(roomRef, {
-          hostId: u.uid,
-          createdAt: now(),
-          state: 'lobby',
-          currentQuestionIndex: -1,
-          questionStart: null,
-          paused: false,
-          pauseStart: null,
-          pausedAccumMs: 0,
-          code: codeTry,       // ← guardamos el code dentro de la sala
-          quiz: sampleQuiz
-        })
-
-        // reserva alias (no se puede sobrescribir por reglas)
-        tx.set(aliasRef, {
-          roomId: roomIdAuto,
-          hostId: u.uid,
-          createdAt: now(),
-          active: true
-        })
-
-        return { roomId: roomIdAuto, code: codeTry }
-      })
-
-      nav(`/host/${roomId}`)
-    } catch (e) {
-      console.error(e)
-      const msg = e.message === 'room_code_exhausted'
-        ? 'No pudimos generar un código único. Probá otra vez.'
-        : (e.code || e.message)
-      alert(`No se pudo crear la sala: ${msg}`)
-    } finally {
-      setCreating(false)
+  useEffect(() => {
+    const calc = () => {
+      const vw = window.innerWidth
+      const vh = window.visualViewport?.height || window.innerHeight
+      const headerH = headerRef.current?.getBoundingClientRect().height ?? 48
+      const GUTTER = 8
+      const availH = Math.max(160, vh - headerH - GUTTER*2)
+      const availW = Math.max(160, vw - GUTTER*2)
+      const base = Math.min(availH, availW)
+      const SCALE = 0.9
+      const s = Math.floor(base * SCALE)
+      setWheelSize(s)
     }
-  }
-
-  // Unirse: requiere nombre válido y resuelve code → roomId
-  async function joinRoom(){
-    const trimmed = cleanName
-    if (trimmed.length < 2) {
-      alert('Ingresá tu nombre (mínimo 2 caracteres).')
-      return
+    calc()
+    window.addEventListener('resize', calc)
+    window.addEventListener('orientationchange', calc)
+    window.visualViewport?.addEventListener('resize', calc)
+    return () => {
+      window.removeEventListener('resize', calc)
+      window.removeEventListener('orientationchange', calc)
+      window.visualViewport?.removeEventListener('resize', calc)
     }
-
-    if(!roomCode) return
-    const aliasRef = doc(db, 'roomCodes', roomCode)
-    const aliasSnap = await getDoc(aliasRef)
-    if(!aliasSnap.exists()){
-      // Fallback opcional: intentar rooms/{roomCode} si aún usás el esquema viejo
-      const roomRefLegacy = doc(db, 'rooms', roomCode)
-      const roomSnapLegacy = await getDoc(roomRefLegacy)
-      if (!roomSnapLegacy.exists()) {
-        alert('Código inválido o sala inexistente.')
-        return
-      }
-      nav(`/play/${roomCode}?name=${encodeURIComponent(trimmed.slice(0, 20))}`)
-      return
-    }
-    const { roomId } = aliasSnap.data()
-    // (Opcional: comprobar que la sala exista)
-    const roomRef = doc(db, 'rooms', roomId)
-    const roomSnap = await getDoc(roomRef)
-    if(!roomSnap.exists()){
-      alert('La sala ya no está disponible.')
-      return
-    }
-    nav(`/play/${roomId}?name=${encodeURIComponent(trimmed.slice(0, 20))}`)
-  }
-
-  const shareUrl = roomCode ? `${window.location.origin}/play/${roomCode}` : ''
+  }, [])
 
   return (
-    <div className="grid">
-      {/* Header simple del lobby con botón info */}
-      <div className="row" style={{justifyContent:'space-between', alignItems:'center'}}>
-        <h1>Kahoot · Agroexportador</h1>
-        <button className="btn small secondary" onClick={()=>setShowInfo(true)}>ℹ️ Info</button>
-      </div>
+    <div className="lobby-wrap">
+      <style>{`
+        .lobby-wrap{
+          position: fixed; inset: 0;
+          display: flex; flex-direction: column;
+          background: #0b1220; color: #e5e7eb;
+          overflow: hidden;
+          -webkit-overflow-scrolling: auto;
+        }
+        .lw-header{
+          display:flex; align-items:center; justify-content:space-between;
+          padding: 8px 10px;
+        }
+        .lw-title{ margin:0; font-size:1.22rem; line-height:1; font-weight:800; letter-spacing:.2px; }
+        .info-btn{
+          width:28px; height:28px; display:grid; place-items:center;
+          border-radius:8px; border:1px solid rgba(255,255,255,.12);
+          background:rgba(255,255,255,.06); color:#e5e7eb; cursor:pointer; font-size:.9rem;
+        }
+        .lw-main{
+          flex:1; min-height:0; padding: 0 8px 8px;
+          display:grid; align-items: start; justify-items: center;
+        }
+        .roulette-wrap{
+          width: 100%; height: 100%;
+          display:grid; align-items:start; justify-items:center;
+          padding:0; background:transparent; border:0; box-shadow:none;
+        }
+        .roulette-wrap.card{ padding:0!important; border:0!important; background:transparent!important; box-shadow:none!important; }
+        .rw-wrap > .btn{ display:none!important; }
+        .rw-wrap > .small{ display:none!important; }
 
-      <div className="card">
-        <h1>Crear sala</h1>
-        <p className="small">Se genera una sala con el cuestionario “{sampleQuiz.title}”.</p>
-        <button className="btn" onClick={createRoom} disabled={creating}>
-          {creating ? 'Creando...' : 'Crear y ser anfitrión'}
-        </button>
-      </div>
+        /* ⬆️ Elevar celebración de materia ganadora SOLO en Lobby */
+        .lobby-wrap .cele-overlay{
+          align-items: flex-start;                    /* sube el overlay */
+          padding-top: clamp(10vh, 12vh, 15vh);         /* margen superior responsivo */
+        }
+      `}</style>
 
-      <div className="card">
-        <h1>Unirse a una sala</h1>
-        <div className="grid two">
-          <div>
-            <label className="small">Código de sala</label>
-            <input
-              className="input"
-              placeholder="p. ej. 123456"
-              value={roomCode}
-              onChange={e => setRoomCode(e.target.value.trim())}
-              inputMode="numeric"
-              pattern="[0-9]*"
-              maxLength={6}
-            />
-          </div>
-          <div>
-            <label className="small">Tu nombre (obligatorio)</label>
-            <input
-              className="input"
-              placeholder="Nombre visible"
-              value={name}
-              onChange={e => setName(e.target.value)}
-              maxLength={20}
-              required
-            />
-            {!isNameValid && name.length > 0 && (
-              <div className="small" style={{color:'#fca5a5', marginTop:6}}>
-                Mínimo 2 caracteres.
-              </div>
-            )}
-          </div>
+      <header className="lw-header" ref={headerRef}>
+        <h1 className="lw-title">Pelle 2°4</h1>
+        <button className="info-btn" aria-label="Información" onClick={()=>setShowInfo(true)}>ℹ️</button>
+      </header>
+
+      <main className="lw-main">
+        <div className="roulette-wrap">
+          <RouletteWheel
+            subjects={materias}
+            fixedResult="Geografía"
+            compact
+            size={wheelSize}
+            onFinish={(materia) => {
+              setSelectedSubject(materia)
+              setShowCelebration(true)
+            }}
+          />
         </div>
-        <div className="row" style={{marginTop:12}}>
-          <button className="btn secondary" onClick={joinRoom} disabled={!isJoinEnabled}>
-            Unirme
-          </button>
-          {roomCode && <span className="small">Link directo: <code>{shareUrl}</code></span>}
-        </div>
-      </div>
+      </main>
+
       <CreditsModal open={showInfo} onClose={()=>setShowInfo(false)} />
+
+      {showCelebration && (
+        <WinnerCelebration
+          name={(selectedSubject || 'Geografía').toUpperCase()}
+          subtitle="¡Materia ganadora!"
+          durationMs={2200}
+          onClose={() => {
+            setShowCelebration(false)
+            nav(`/create?subject=${encodeURIComponent(selectedSubject || 'Geografía')}`)
+          }}
+        />
+      )}
     </div>
   )
 }

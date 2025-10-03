@@ -1,3 +1,4 @@
+// src/pages/Host.jsx
 import { useEffect, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import { auth, db, ensureAnonAuth, now } from '../firebase'
@@ -9,7 +10,6 @@ import QuestionCard from '../components/QuestionCard'
 import WinnerCelebration from '../components/WinnerCelebration'
 import CreditsModal from '../components/CreditsModal'
 
-/** (opcional) badge de cuenta regresiva con colores */
 function cdClass(remaining, total){
   if (remaining == null || total == null) return 'badge'
   const r = Number(remaining)
@@ -45,7 +45,7 @@ export default function Host(){
   const meIsHost = room && auth.currentUser && room.hostId === auth.currentUser.uid
   const q = room?.quiz?.questions?.[room?.currentQuestionIndex ?? -1]
   const totalQ = room?.quiz?.questions?.length ?? 0
-  const questionNumber = (room?.currentQuestionIndex ?? -1) + 1 // para “X/total”
+  const questionNumber = (room?.currentQuestionIndex ?? -1) + 1
 
   async function startGame(){
     if(!meIsHost) return
@@ -87,7 +87,6 @@ export default function Host(){
     if(!meIsHost || !room) return
     const next = room.currentQuestionIndex + 1
     if(next >= totalQ){
-      // fin del juego: ganador
       const snap = await getDocs(collection(db,'rooms',roomId,'players'))
       const all = snap.docs.map(d => ({ id:d.id, ...d.data() }))
       const top = all.sort((a,b)=>(b.score||0)-(a.score||0))[0] || null
@@ -105,7 +104,6 @@ export default function Host(){
     }
   }
 
-  // 👉 PAUSAR / REANUDAR (guarda líder al pausar)
   async function togglePause(){
     if(!meIsHost || !room || room.state !== 'question') return
     const roomRef = doc(db,'rooms',roomId)
@@ -122,16 +120,13 @@ export default function Host(){
     }
   }
 
-  // 🔄 REINICIAR
   async function resetGame(){
     if(!meIsHost) return
     const ok = window.confirm('¿Reiniciar partida? Se pondrán los puntajes en 0 y volverá al lobby.')
     if(!ok) return
     const batch = writeBatch(db)
     const psnap = await getDocs(collection(db,'rooms',roomId,'players'))
-    psnap.forEach(d => {
-      batch.update(d.ref, { score: 0, answers: {} })
-    })
+    psnap.forEach(d => { batch.update(d.ref, { score: 0, answers: {} }) })
     await batch.commit()
     await updateDoc(doc(db,'rooms',roomId), {
       state:'lobby',
@@ -142,7 +137,7 @@ export default function Host(){
     })
   }
 
-  // ⏱️ Countdown en host (auto-reveal al llegar a 0)
+  // Countdown
   useEffect(() => {
     if(!meIsHost || !room || room.state !== 'question' || !q || !room.questionStart?.toMillis) {
       setRemaining(null)
@@ -164,10 +159,8 @@ export default function Host(){
     tick()
     const id = setInterval(tick, 250)
     return () => clearInterval(id)
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [meIsHost, room?.state, room?.currentQuestionIndex, room?.questionStart?.seconds, room?.paused, room?.pauseStart?.seconds, room?.pausedAccumMs, q?.timeLimitSec])
 
-  // Avanzar automáticamente tras mostrar reveal unos segundos
   useEffect(() => {
     if(!meIsHost || !room || room.state !== 'reveal') return
     if (room.currentQuestionIndex !== lastConfettiQ) {
@@ -181,19 +174,13 @@ export default function Host(){
     }
     const t = setTimeout(() => { nextQuestion().catch(console.error) }, 3500)
     return () => clearTimeout(t)
-  }, [meIsHost, room?.state, room?.currentQuestionIndex]) // eslint-disable-line
+  }, [meIsHost, room?.state, room?.currentQuestionIndex]) 
 
   if(!room) return <div className="card">Cargando sala...</div>
-  if(!meIsHost) return (
-    <div className="card">
-      <h2>No sos el anfitrión</h2>
-      <p className="small">Ingresaste como <code>{auth.currentUser?.uid}</code>. Solo el anfitrión puede controlar la partida.</p>
-    </div>
-  )
+  if(!meIsHost) return <div className="card"><h2>No sos el anfitrión</h2></div>
 
   const top = [...players].sort((a,b)=>(b.score||0)-(a.score||0))[0]
 
-  // Lista de quienes acertaron en la ronda actual (para mostrar durante reveal)
   const correctList = (() => {
     if (!room || room.state !== 'reveal') return []
     const idx = room.currentQuestionIndex ?? -1
@@ -201,22 +188,34 @@ export default function Host(){
     const qCorrectIndex = room.quiz?.questions?.[idx]?.correctIndex
     return players.filter(p => {
       const a = p.answers?.[idx]
-      if (!a) return false
-      if (typeof a.correct === 'boolean') return a.correct
-      return typeof qCorrectIndex === 'number' && a.index === qCorrectIndex
+      return a && (typeof a.correct === 'boolean' ? a.correct : a.index === qCorrectIndex)
     }).map(p => ({ id: p.id, name: p.name || 'Jugador' }))
   })()
 
   return (
-    <div className="grid">
-      {/* 🎉 Celebración al finalizar */}
+    <div className="host-wrap">
+      <style>{`
+        .host-wrap{
+          position: fixed; inset:0;
+          display:flex; flex-direction:column;
+          background:#0b1220; color:#e5e7eb;
+          overflow-y:auto;
+          padding:8px;
+        }
+        .card{ background:rgba(255,255,255,.06); border-radius:12px; padding:10px; margin-bottom:10px; }
+        .row{ display:flex; gap:8px; align-items:center; flex-wrap:wrap; }
+        .leaderboard{ width:100%; border-collapse:collapse; }
+        .leaderboard th, .leaderboard td{ padding:4px 8px; border-bottom:1px solid rgba(255,255,255,.1); text-align:left; }
+        .cele-overlay{ position:fixed; inset:0; display:flex; align-items:flex-start; justify-content:center; padding-top:15vh; z-index:9999; }
+        .cele-card{ background:#111a; border-radius:12px; padding:12px 16px; text-align:center; }
+      `}</style>
+
       {room.state === 'ended' && room.winner && (
         <WinnerCelebration name={room.winner.name} subtitle="¡Ganó la partida!" />
       )}
 
-      {/* 🎯 Cartel de aciertos parciales */}
       {room.state === 'reveal' && (
-        <div className="cele-overlay" style={{background:'transparent', pointerEvents:'none'}}>
+        <div className="cele-overlay">
           <div className="cele-card">
             <div className="cele-emoji">🎯</div>
             <div style={{fontWeight:800, fontSize:'1.1rem', marginBottom:6}}>
@@ -224,65 +223,27 @@ export default function Host(){
             </div>
             {!!correctList.length && (
               <div className="row" style={{justifyContent:'center'}}>
-                {correctList.map(p => (
-                  <span key={p.id} className="badge">{p.name}</span>
-                ))}
+                {correctList.map(p => <span key={p.id} className="badge">{p.name}</span>)}
               </div>
             )}
           </div>
-          {/* serpentinas */}
-          <div className="serp s1" /><div className="serp s2" /><div className="serp s3" />
-          <div className="serp s4" /><div className="serp s5" /><div className="serp s6" />
         </div>
       )}
 
       <div className="card">
-        <div className="row" style={{justifyContent:'space-between', alignItems:'center'}}>
+        <div className="row" style={{justifyContent:'space-between'}}>
           <h1>Sala {room.code || room.id}</h1>
-          <div className="row" style={{gap:8, alignItems:'center'}}>
-            {/* Botón Info: solo cuando NO está en pregunta */}
-            {room.state !== 'question' && (
-              <button className="btn small secondary" onClick={()=>setShowInfo(true)}>ℹ️ Info</button>
-            )}
-            {/* Progreso Pregunta X/Total */}
-            {room.state !== 'lobby' && totalQ > 0 && questionNumber > 0 && (
-              <span className="small" style={{opacity:0.8}}>
-                Pregunta <strong>{questionNumber}/{totalQ}</strong>
-              </span>
-            )}
-            <span className={
-              room.state === 'question'
-                ? (room.paused ? 'badge' : cdClass(remaining, q?.timeLimitSec))
-                : 'badge'
-            }>
-              {room.state === 'question'
-                ? (room.paused ? 'Pausado' : `${remaining ?? q?.timeLimitSec ?? 0}s`)
-                : room.state}
-            </span>
-          </div>
+          <button className="btn small secondary" onClick={()=>setShowInfo(true)}>ℹ️ Info</button>
         </div>
-        <p className="small">Jugadores conectados: {players.length}</p>
-
-        {room.state === 'lobby'    && <button className="btn" onClick={startGame}>Iniciar</button>}
-
+        <p className="small">Jugadores: {players.length}</p>
+        {room.state === 'lobby' && <button className="btn" onClick={startGame}>Iniciar</button>}
         {room.state === 'question' && (
-          <div className="row" style={{gap:8}}>
-            <button className="btn" onClick={reveal}>Revelar ahora</button>
-            <button className="btn secondary" onClick={togglePause}>
-              {room.paused ? 'REANUDAR' : 'PAUSAR'}
-            </button>
-            <button className="btn danger" onClick={resetGame}>REINICIAR</button>
+          <div className="row">
+            <button className="btn" onClick={reveal}>Revelar</button>
+            <button className="btn secondary" onClick={togglePause}>{room.paused ? 'Reanudar' : 'Pausar'}</button>
+            <button className="btn danger" onClick={resetGame}>Reiniciar</button>
           </div>
         )}
-
-        {room.state === 'reveal' && (
-          <div className="row" style={{gap:8}}>
-            <button className="btn" onClick={nextQuestion}>Siguiente</button>
-            <button className="btn danger" onClick={resetGame}>REINICIAR</button>
-          </div>
-        )}
-
-        {room.state === 'ended'    && <button className="btn secondary" onClick={() => nav('/')}>Volver al inicio</button>}
       </div>
 
       {(room.state === 'question' || room.state === 'reveal') && q && (
@@ -300,13 +261,10 @@ export default function Host(){
           </tbody>
         </table>
         {room.state === 'ended' && top && (
-          <p className="small" style={{marginTop:8}}>
-            Ganador: <strong>{top.name}</strong> ({top.score || 0} pts)
-          </p>
+          <p className="small">Ganador: <strong>{top.name}</strong> ({top.score || 0} pts)</p>
         )}
       </div>
 
-      {/* Modal de créditos */}
       <CreditsModal open={showInfo} onClose={()=>setShowInfo(false)} />
     </div>
   )
